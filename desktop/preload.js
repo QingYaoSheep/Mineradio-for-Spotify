@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   exitFullscreenWindowed: () => ipcRenderer.invoke('desktop-window-exit-fullscreen-windowed'),
   getState: () => ipcRenderer.invoke('desktop-window-get-state'),
   close: () => ipcRenderer.invoke('desktop-window-close'),
+  getDesktopSources: (opts) => ipcRenderer.invoke('desktop-capturer-get-sources', opts),
   openNeteaseMusicLogin: () => ipcRenderer.invoke('netease-music-open-login'),
   clearNeteaseMusicLogin: () => ipcRenderer.invoke('netease-music-clear-login'),
   openQQMusicLogin: () => ipcRenderer.invoke('qq-music-open-login'),

@@ -1,14 +1,14 @@
-# Mineradio Project Rules
+# Mineradio for Spotify Project Rules
 
 ## Project Identity
 
-Mineradio 是 Windows Electron 桌面音乐播放器，核心体验包括搜索、播放、歌单、歌词、3D 歌单架、粒子视觉预设、DIY 视觉控制台和 GitHub 自动更新。
+Mineradio for Spotify 是 Windows Electron 桌面 Spotify 遥控与音乐可视化播放器，核心体验包括 Spotify 当前播放控制、搜索、歌单、逐字歌词、3D 歌单架、粒子视觉预设、DIY 视觉控制台和 GitHub 自动更新。
 
 - 当前可运行程序：`E:\桌面\播放器软件\Mineradio\Mineradio.exe`
 - 当前运行版主目录：`E:\桌面\播放器软件\Mineradio`
 - 当前真实代码/Git 仓库：`E:\桌面\播放器软件\Mineradio\resources\app`
 - GitHub 仓库：`https://github.com/XxHuberrr/Mineradio.git`
-- 当前源码版本：`v1.1.0`
+- 当前源码版本：`v1.1.2`
 - 统一备份区：`E:\桌面\播放器软件\工作区备份`
 
 ## Start Every New Codex Thread Here
@@ -71,8 +71,8 @@ node --check server.js
 3. 运行语法/空白检查。
 4. 执行 `npm run build:win`。
 5. 上传 GitHub Release 资产：
-   - `dist/Mineradio-x.y.z-Setup.exe`
-   - `dist/Mineradio-x.y.z-Setup.exe.blockmap`
+   - `dist/Mineradio-for-Spotify-x.y.z-Setup.exe`
+   - `dist/Mineradio-for-Spotify-x.y.z-Setup.exe.blockmap`
    - `dist/latest.yml`
    - 需要的 `Mineradio-旧版本-x.y.z.json` 轻量补丁
 6. 0.9 系列补丁跳过；1.0.x 系列可按需生成跨小版本补丁。

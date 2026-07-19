@@ -6,7 +6,7 @@
 
 ## Installer Safety Notice
 
-`v1.0.10` 及更早旧安装包不再建议继续安装或传播。请将旧 `.exe` 安装包视为不可信历史产物并隔离保留；需要安装 Mineradio 时，请使用 `v1.1.0` 或更新版本的 GitHub Release 安装包。
+`v1.0.10` 及更早旧安装包不再建议继续安装或传播。请将旧 `.exe` 安装包视为不可信历史产物并隔离保留；需要安装 Mineradio for Spotify 时，请使用 `v1.1.0` 或更新版本的 GitHub Release 安装包。
 
 `v1.1.0` 不作为 `v1.0.10` 的软件内本地更新包发布。旧版本用户请手动下载新版安装包，卸载旧版本后进行纯净安装。
 
@@ -18,12 +18,15 @@
 
 ## Sensitive Data
 
-Mineradio 不应收集或上传用户 Cookie。用户登录状态应保存在本地用户数据目录中。
+Mineradio for Spotify 不应收集或上传用户 Cookie、Spotify Client Secret 或 OAuth Token。用户登录状态应保存在本地用户数据目录中。
+
+Spotify 桌面授权使用 Authorization Code with PKCE，不接受 Client Secret。refresh token 必须通过 Electron `safeStorage` 加密保存；access token 只允许存在于主进程内存，不得返回渲染页面。Spotify Web API 代理默认只监听 `127.0.0.1`，写操作必须通过同源校验。
 
 如果你要提交问题反馈，请先确认没有附带：
 
 - `.cookie`
 - `.qq-cookie`
+- `.spotify-auth`
 - 本地音乐文件
 - 用户账号截图
 - 调试日志中的 Cookie、Token 或隐私路径

@@ -1,6 +1,6 @@
 # NOTICE
 
-Mineradio 使用了以下第三方项目或服务。各项目版权归其原作者所有。
+Mineradio for Spotify 使用了以下第三方项目或服务。各项目版权归其原作者所有。
 
 ## Third-party Libraries
 
@@ -13,13 +13,13 @@ Mineradio 使用了以下第三方项目或服务。各项目版权归其原作�
 
 ## Third-party Services
 
-Mineradio 可能与网易云音乐、QQ 音乐等第三方音乐服务进行用户自有账号相关的本地客户端交互。
+Mineradio for Spotify 可能与 Spotify、网易云音乐、QQ 音乐等第三方音乐服务进行用户自有账号相关的本地客户端交互。
 
-Mineradio 不是任何音乐平台的官方客户端，也不隶属于网易云音乐、QQ 音乐或腾讯音乐娱乐集团。请用户自行遵守对应平台的服务协议、版权规则和会员权益规则。
+Mineradio for Spotify 不是 Spotify、网易云音乐、QQ 音乐或腾讯音乐娱乐集团的官方客户端，也不受这些平台认可或赞助。请用户自行遵守对应平台的服务协议、版权规则和会员权益规则。
 
 ## Original Design
 
-Mineradio 名称、MR Logo、界面视觉设计、启动动画方向、粒子视觉体验和电影镜头系统的产品表达属于作者原创设计。
+Mineradio for Spotify 名称、MR Logo、界面视觉设计、启动动画方向、粒子视觉体验和电影镜头系统的产品表达属于作者原创设计。
 
 emily 作为 Mineradio 早期视觉底层想法与 `emily` 视觉预设改进方向的共创者和灵感来源之一，特此致谢。
 

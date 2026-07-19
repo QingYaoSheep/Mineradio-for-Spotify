@@ -1,5 +1,52 @@
 # Mineradio Project Memory
 
+### 2026-07-19 - Spotify PKCE 与令牌隔离安全边界
+
+- 用户认可/要求保留：Spotify 桌面授权必须使用 Authorization Code with PKCE，前端和仓库目录不得持久化 Client Secret 或 OAuth Token；授权、刷新和播放控制仍需正常工作。
+- 涉及文件：`spotify-auth-session.js`、`spotify-secure-auth-store.js`、`server.js`、`desktop/main.js`、`public/index.html`、`scripts/verify-spotify-pkce-security.js`、`scripts/verify-spotify-pkce-flow.js`。
+- 关键参数/实现：前端只保存公开 Client ID；PKCE verifier/state 只在主进程内存保留且 10 分钟失效；refresh token 通过 Electron `safeStorage` 加密写入 `%APPDATA%\Mineradio\.spotify-auth.enc`，access token 不落盘且不返回渲染进程；Spotify Web API 通过白名单本地代理访问，默认只监听 `127.0.0.1`，写操作校验同源 Origin。
+- 禁止回退或改坏的点：不要恢复 Client Secret 输入、URL 参数或 localStorage 字段；不要恢复 `/api/spotify/token` 或页面直连 `api.spotify.com`；不要把 access/refresh token 写回仓库目录、普通 JSON 或前端状态；不要把本地代理重新监听 `0.0.0.0`。
+
+### 2026-07-19 - 正式命名为 Mineradio for Spotify
+
+- 用户认可/要求保留：项目正式名称为 **Mineradio for Spotify**；窗口、安装器、快捷方式、GitHub 文档和新发布资产统一使用该名称。
+- 涉及文件：`package.json`、`package-lock.json`、`desktop/main.js`、`public/index.html`、`public/desktop-lyrics.html`、`build/installer.nsh`、`README.md`、`RELEASE.md`、`CHANGELOG.md`。
+- 关键参数/实现：首个新品牌发布版本为 `v1.1.2`；安装包命名为 `Mineradio-for-Spotify-${version}-Setup.exe`。为兼容旧用户，继续保留 `com.mineradio.desktop`、`Mineradio.exe`、`D:\Mineradio`、`%APPDATA%\Mineradio`、旧登录分区和现有本地存储键。
+- 禁止回退或改坏的点：不要把用户可见名称改回单独的 Mineradio；也不要仅为改名迁移 appId、可执行文件、用户数据目录或安装目录，否则会造成设置/登录态丢失和安装器升级风险。
+
+### 2026-07-18 - 卡拉 OK 字面透明度与翻译同构阴影
+
+- 用户认可/要求保留：当前卡拉 OK 原文未扫过字面使用当前整体透明度的 75%，扫过部分为 100%；翻译字面继续保持当前整体透明度的 100%，不参与卡拉 OK。翻译使用与原文相同的多层阴影结构。
+- 涉及文件：`public/index.html`、`scripts/verify-lyric-translation-and-spotify-clock.js`、`scripts/runtime-lyric-smoke.js`。
+- 关键参数/实现：字面透明度在歌词 shader 内通过 original mask 单独计算，最终仍乘 `uOpacity`，所以保留淡入淡出、详情页避让和退场透明度；阴影由统一四层 pass 定义生成，翻译层数、颜色和每层 alpha 与原文相同，仅按 `transFontSize / fontSize` 缩放模糊半径、描边宽度与位移。
+- 禁止回退或改坏的点：不要把翻译降到 75% 或让翻译参与逐字滚动；不要让阴影随卡拉 OK 前沿滚动；不要为增强差异而擅自改变自动取色或用户自定义颜色。
+
+### 2026-07-18 - QQ QRC 单一源时间轴与网易云逐行降级
+
+- 用户认可/要求保留：逐字卡拉 OK 只使用 QQ QRC；自动歌词顺序固定为 QQ QRC → QQ LRC → 网易云 LRC，网易云 YRC 永久不进入逐字引擎。重叠、乱序、零时长 QRC 节点都是合法源数据，不能让卡拉 OK 效果消失。
+- 涉及文件：`public/index.html`、`scripts/verify-lyric-timeline-and-interludes.js`、`scripts/verify-lyric-translation-and-spotify-clock.js`、`scripts/verify-lyric-selection-and-delay.js`、`scripts/runtime-lyric-smoke.js`。
+- 关键参数/实现：QRC 只预解析为一份 `karaokeTimeline`，每帧按播放时钟直接采样各节点 `start + duration`，取文本最右侧进度；坏时间节点保留文字但不合成时间，含坏节点的句子在 `sourceEnd` 完成。歌词延迟、暂停 seek、Spotify 时钟会立即重采样 3D 与桌面歌词。间奏严格大于 5 秒显示三点呼吸，开头严格大于 8 秒才显示，空白起点取 `max(合法节点最晚结束, QRC sourceEnd)`。
+- 禁止回退或改坏的点：不要恢复重叠/乱序校验、按下一句时间拉伸高亮或网易云 YRC 逐字；不要让 QRC 同时维护 `words` 与 `karaokeTimeline` 两套会分叉的时间模型；不要让调整歌词延迟后等待轮询才刷新。
+
+### 2026-07-17 - 3D 歌词翻译与 Spotify 卡拉 OK 连续时钟
+
+- 用户认可/要求保留：软件内 3D 卡拉 OK 歌词默认显示歌词源自带翻译；原文继续逐字高亮，翻译位于下方、保持 100% 不透明度但不参与高亮。Spotify 高亮必须逐帧连续，不能按轮询间隔跳动。在线歌词源默认以 QQ 音乐为最高优先级，QQ 无可用歌词或请求失败时才回退网易云。
+- 涉及文件：`public/index.html`、`public/default-user-fx-archive.json`、`scripts/verify-lyric-translation-and-spotify-clock.js`、`scripts/runtime-lyric-smoke.js`。
+- 关键参数/实现：`fx.lyricTranslation` 默认 `true` 并进入本地设置和用户存档；翻译字号优先为原文 `0.42`、最低约 `0.34`，最多两行且不截断，shader 输出 alpha 不再对翻译降至 `0.52`；`fx.lyricProviderPriority` 默认 `qq` 并持久化，共享 resolver 按 QQ → 网易云顺序请求，Spotify 当前歌曲也直接进入该 resolver；只使用网易云/QQ 返回的翻译；Spotify 播放时钟以 `performance.now()` 逐帧推算，轮询小偏差在约 `300ms` 内纠正，大偏差、暂停和切歌立即对齐。
+- 禁止回退或改坏的点：不要降低翻译的 alpha，也不要让翻译进入逐字高亮或反向缩小原歌词；不要为无翻译歌曲保留空行；不要接入在线机器翻译；不要让 Spotify 在共享 resolver 之前预先请求网易云；Spotify 模式不能退回残留本地 `audio.currentTime`，也不要给网易云、QQ、本地歌词增加造成延迟的全局低通缓动；本轮不扩展桌面歌词。
+
+### 2026-07-16 - Spotify Integration (Spotify Mode)
+- 2026-07-19 安全替代说明：本条记录中的 Client Secret 与 `/api/spotify/token` 方案已经废弃，不得恢复；当前唯一有效边界见上方“Spotify PKCE 与令牌隔离安全边界”。
+- User requirement: Transform Mineradio into a Spotify-focused lyric visualizer and controller when in Spotify Mode.
+- Files: `public/index.html`, `server.js`, `desktop/main.js`, `desktop/preload.js`.
+- Implementation:
+  - Added OAuth2 backend routes in `server.js` (`/api/spotify/login`, `/api/spotify/callback`, `/api/spotify/token`).
+  - Added `fx.spotifyMode` in frontend. When active, it disables the local `<audio>` tag's connection to the internal NetEase source.
+  - Replaced the visualizer audio source with system audio (Loopback) via `desktopCapturer` in `main.js` and `navigator.mediaDevices.getUserMedia`.
+  - Replaced lyrics synchronization `audio.currentTime` with a mocked global time derived from polling Spotify's `/me/player/currently-playing`.
+  - Automatically fetches NetEase/QQ lyrics for the active Spotify track.
+- Do not regress: Do not break the system audio loopback mechanism; if `fx.spotifyMode` is true, the `audio` tag remains silent but its time is mocked so the visualizer and lyric engine still run smoothly.
+
 ### 2026-06-25 - P0 Installer In-Place Repair Rule
 
 - User requirement: all users must receive the installer/uninstaller safety fix with zero risk to unrelated files.

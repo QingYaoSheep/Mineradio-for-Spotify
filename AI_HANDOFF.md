@@ -1,11 +1,13 @@
-# Mineradio AI Handoff
+# Mineradio for Spotify AI Handoff
 
 这个文件是给后续接管本工作区的 AI 看的。每次完成一个任务后，都要更新本文件的「工作日志」和「未完成事项」，让下一位接手者能快速知道用户偏好、当前状态和最近做过什么。
 
 ## 当前权威入口（2026-06-24）
 
-- 当前真实代码/Git 仓库仍是 `E:\桌面\播放器软件\Mineradio\resources\app`。
-- 当前版本是 `v1.1.0` 纯净安装发布线；本轮已从当前可信源码重新生成并发布 `dist/Mineradio-1.1.0-Setup.exe`。
+> 2026-07-19 更新：项目正式名称为 **Mineradio for Spotify**，当前发布候选版本为 `v1.1.2`。用户可见名称与新安装包使用新品牌；`com.mineradio.desktop`、`Mineradio.exe`、`D:\Mineradio` 和 `%APPDATA%\Mineradio` 为升级兼容字段，继续保留。当前实际工作区是 `E:\Antigravity\Mineradio-Spotify`，旧 `E:\桌面\播放器软件\Mineradio\resources\app` 路径在当前机器上不存在。
+
+- 当前真实代码/Git 仓库是 `E:\Antigravity\Mineradio-Spotify`。
+- 当前版本是 `v1.1.2` GitHub 发布候选；本轮已从当前源码生成 `dist/Mineradio-for-Spotify-1.1.2-Setup.exe`，尚未上传或发布。
 - GitHub 仓库已公开：`https://github.com/XxHuberrr/Mineradio`
 - `v1.1.0` Release：`https://github.com/XxHuberrr/Mineradio/releases/tag/v1.1.0`
 - GitHub `/releases/latest` 仍返回 `v1.0.10`，这是刻意设置，避免旧版软件内更新到 1.1.0。
@@ -74,6 +76,15 @@
 这个目录是人工归档区，不参与软件更新流程。
 
 ## 已完成工作日志
+
+### 2026-07-19
+
+- 项目正式命名为 **Mineradio for Spotify**，显示名称、窗口、安装器、快捷方式、文档和发布资产已统一；保留 `com.mineradio.desktop`、`Mineradio.exe`、`D:\Mineradio` 与 `%APPDATA%\Mineradio` 兼容旧用户。
+- Spotify 授权重构为 Authorization Code with PKCE。前端只保留公开 Client ID；旧 Client Secret、access/refresh token localStorage 字段和旧明文 `.spotify-auth` 会主动清除。
+- refresh token 只通过 Electron `safeStorage` 加密保存到 `%APPDATA%\Mineradio\.spotify-auth.enc`，access token 仅驻留主进程内存；Spotify API 由 `127.0.0.1` 白名单代理访问，写操作及退出校验同源 Origin。
+- 自动测试覆盖 PKCE state/verifier、授权换码、应用重启后 refresh、play/pause/next/previous、退出清除、Spotify 模式路由与歌单加载；`npm run verify:release` 和 Electron `safeStorage` runtime smoke 均通过。
+- Windows 安装包已成功构建，EXE ProductName/FileDescription 为 `Mineradio for Spotify`。本机 Windows Defender 服务处于禁用状态，无法完成 Defender 扫描；上传前仍需用可用安全软件扫描，并用真实 Spotify 账号完成一次端到端冒烟检查。
+- 本轮按用户要求仅准备本地 GitHub 发布内容，不上传、不 push、不创建远端 Release。
 
 ### 2026-06-24
 

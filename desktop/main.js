@@ -1,8 +1,9 @@
-const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog, desktopCapturer, safeStorage } = require('electron');
 const net = require('net');
 const path = require('path');
 const fs = require('fs');
 const { execFile, spawn } = require('child_process');
+const { SpotifySecureAuthStore } = require('../spotify-secure-auth-store');
 
 let mainWindow = null;
 let localServer = null;
@@ -29,7 +30,8 @@ const WINDOWED_SCALE = 3 / 4;
 const WINDOWED_MARGIN = 32;
 const MIN_WINDOWED_WIDTH = 960;
 const MIN_WINDOWED_HEIGHT = 540;
-const APP_NAME = 'Mineradio';
+const APP_NAME = 'Mineradio for Spotify';
+const LEGACY_USER_DATA_NAME = 'Mineradio';
 const APP_USER_MODEL_ID = 'com.mineradio.desktop';
 const APP_ICON_ICO = path.join(__dirname, '..', 'build', 'icon.ico');
 const NETEASE_LOGIN_PARTITION = 'persist:mineradio-netease-login';
@@ -50,6 +52,11 @@ const CHROMIUM_PERFORMANCE_SWITCHES = [
   ['force_high_performance_gpu'],
   ['use-angle', 'd3d11'],
 ];
+app.setName(APP_NAME);
+// Keep the historical data directory so the rebrand does not sign users out or reset settings.
+app.setPath('userData', path.join(app.getPath('appData'), LEGACY_USER_DATA_NAME));
+if (process.platform === 'win32') app.setAppUserModelId(APP_USER_MODEL_ID);
+
 for (const [name, value] of CHROMIUM_PERFORMANCE_SWITCHES) {
   if (value == null) app.commandLine.appendSwitch(name);
   else app.commandLine.appendSwitch(name, value);
@@ -124,13 +131,13 @@ function waitForServer(server) {
 }
 
 function sendWindowState(win) {
-  if (!win || win.isDestroyed()) return;
-  win.webContents.send('desktop-window-state', getWindowState(win));
+  if (!win || win.isDestroyed() || !win.webContents) return;
+  try { win.webContents.send('desktop-window-state', getWindowState(win)); } catch(e) {}
 }
 
 function sendGlobalHotkeyAction(action) {
-  if (!mainWindow || mainWindow.isDestroyed() || !action) return;
-  mainWindow.webContents.send('mineradio-global-hotkey', { action });
+  if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.webContents || !action) return;
+  try { mainWindow.webContents.send('mineradio-global-hotkey', { action }); } catch(e) {}
 }
 
 function unregisterMineradioGlobalHotkeys() {
@@ -287,7 +294,7 @@ function ensureDesktopShortcut() {
       target,
       cwd: path.dirname(target),
       args: '',
-      description: 'Mineradio desktop music player',
+      description: 'Mineradio for Spotify desktop music visualizer',
       icon: fs.existsSync(APP_ICON_ICO) ? APP_ICON_ICO : target,
       iconIndex: 0,
       appUserModelId: APP_USER_MODEL_ID,
@@ -929,7 +936,7 @@ function createDesktopLyricsWindow(payload = {}) {
     focusable: false,
     skipTaskbar: true,
     show: false,
-    title: 'Mineradio Desktop Lyrics',
+    title: 'Mineradio for Spotify · Desktop Lyrics',
     webPreferences: {
       preload: path.join(__dirname, 'overlay-preload.js'),
       contextIsolation: true,
@@ -1058,7 +1065,7 @@ function createWallpaperWindow(payload = {}) {
     focusable: false,
     skipTaskbar: true,
     show: false,
-    title: 'Mineradio Wallpaper',
+    title: 'Mineradio for Spotify · Wallpaper',
     webPreferences: {
       preload: path.join(__dirname, 'overlay-preload.js'),
       contextIsolation: true,
@@ -1097,6 +1104,10 @@ function closeOverlayWindows() {
   closeWallpaperWindow();
 }
 
+ipcMain.handle('desktop-capturer-get-sources', async (event, opts) => {
+  return await desktopCapturer.getSources(opts);
+});
+
 ipcMain.handle('desktop-window-minimize', (event) => {
   getSenderWindow(event)?.minimize();
 });
@@ -1130,7 +1141,7 @@ ipcMain.handle('mineradio-export-json-file', async (event, payload = {}) => {
     const owner = getSenderWindow(event);
     const defaultName = String(payload.defaultName || 'mineradio-export.json').replace(/[\\/:*?"<>|]+/g, '-');
     const result = await dialog.showSaveDialog(owner, {
-      title: '导出 Mineradio 存档',
+    title: '导出 Mineradio for Spotify 存档',
       defaultPath: defaultName.toLowerCase().endsWith('.json') ? defaultName : `${defaultName}.json`,
       filters: [{ name: 'JSON', extensions: ['json'] }],
     });
@@ -1147,7 +1158,7 @@ ipcMain.handle('mineradio-import-json-file', async (event) => {
   try {
     const owner = getSenderWindow(event);
     const result = await dialog.showOpenDialog(owner, {
-      title: '导入 Mineradio 存档',
+      title: '导入 Mineradio for Spotify 存档',
       properties: ['openFile'],
       filters: [{ name: 'JSON', extensions: ['json'] }],
     });
@@ -1325,9 +1336,21 @@ async function createWindow() {
 
   process.env.HOST = '127.0.0.1';
   process.env.PORT = String(port);
-  process.env.COOKIE_FILE = path.join(app.getPath('userData'), '.cookie');
-  process.env.QQ_COOKIE_FILE = path.join(app.getPath('userData'), '.qq-cookie');
+  const userDataPath = app.getPath('userData');
+  process.env.COOKIE_FILE = path.join(userDataPath, '.cookie');
+  process.env.QQ_COOKIE_FILE = path.join(userDataPath, '.qq-cookie');
+  process.env.MINERADIO_LYRIC_CACHE_DIR = path.join(userDataPath, 'lyric-cache');
   process.env.MINERADIO_UPDATE_DIR = getUpdateDownloadDir();
+  const spotifyAuthStore = new SpotifySecureAuthStore({
+    filePath: path.join(userDataPath, '.spotify-auth.enc'),
+    safeStorage,
+    legacyPaths: [
+      path.join(__dirname, '..', '.spotify-auth'),
+      path.join(userDataPath, '.spotify-auth'),
+    ],
+  });
+  spotifyAuthStore.clearLegacyPlaintext();
+  global.__mineradioSpotifyAuthStore = spotifyAuthStore;
   try {
     const legacyQQCookie = path.join(__dirname, '..', '.qq-cookie');
     if (fs.existsSync(legacyQQCookie)) {
@@ -1425,9 +1448,6 @@ async function createWindow() {
 
   await mainWindow.loadURL(`http://127.0.0.1:${port}`);
 }
-
-app.setName(APP_NAME);
-if (process.platform === 'win32') app.setAppUserModelId(APP_USER_MODEL_ID);
 
 if (!gotSingleInstanceLock) {
   app.quit();

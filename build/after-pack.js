@@ -52,13 +52,13 @@ module.exports = async function afterPack(context) {
   if (!fs.existsSync(iconPath)) throw new Error(`Mineradio icon was not found: ${iconPath}`);
 
   const version = context.packager.appInfo.version;
-  console.log(`  • injecting Mineradio resources  rcedit=${rceditPath}`);
+  console.log(`  • injecting Mineradio for Spotify resources  rcedit=${rceditPath}`);
   execFileSync(rceditPath, [
     exePath,
     '--set-icon', iconPath,
-    '--set-version-string', 'FileDescription', 'Mineradio',
-    '--set-version-string', 'ProductName', 'Mineradio',
-    '--set-version-string', 'CompanyName', 'Mineradio',
+    '--set-version-string', 'FileDescription', 'Mineradio for Spotify',
+    '--set-version-string', 'ProductName', 'Mineradio for Spotify',
+    '--set-version-string', 'CompanyName', 'XxHuberrr',
     '--set-version-string', 'OriginalFilename', `${appName}.exe`,
     '--set-file-version', version,
     '--set-product-version', version

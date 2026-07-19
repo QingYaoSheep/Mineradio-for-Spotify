@@ -18,6 +18,8 @@ win-unpacked/
 # User data and private state
 .cookie
 .qq-cookie
+.spotify-auth
+.spotify-auth.enc
 updates/
 backups/
 *.log
@@ -45,3 +47,7 @@ tmp/
 *.png.tmp
 verification/
 screenshots/
+
+# Local agent and conversation context
+.agents/
+Chat_History.md

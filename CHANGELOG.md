@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.1.2
+
+- 项目正式命名为 **Mineradio for Spotify**；窗口、安装器、快捷方式、安装包文件名与公开文档统一使用新名称，同时保留旧应用 ID、用户数据目录和安装目录以兼容现有用户。
+- 新增 Spotify 模式：在高级设置中配置公开的 Spotify Client ID，开启后 Mineradio 将化身为 Spotify 专用遥控器与可视化歌词显示器。
+- Spotify 授权改用适合桌面应用的 Authorization Code with PKCE：不再要求或保存 Client Secret；refresh token 使用 Electron `safeStorage` 加密，access token 仅驻留主进程内存并由本地白名单代理自动刷新。
+- 歌词与元数据无缝同步：劫持底层时间线和 `<audio>` 播放接口，实时轮询 Spotify 当前播放状态，并将进度和歌曲信息对接给现存的网易云/QQ 歌词引擎，实现 Spotify 歌曲歌词显示。
+- 全局桌面音频捕获：Spotify 模式下不再分析内建播放器的声音，而是直接捕获系统桌面音频（Loopback），交由内部 Web Audio Analyzer 和粒子引擎处理，呈现随 Spotify 节奏跳动的 3D 视觉和电影镜头。
+- Spotify 个人歌单接入：开启 Spotify 模式后，3D 歌单架及侧边栏将拉取并渲染用户的 Spotify 个人歌单列表。
+- 拦截并接管全局播放控制：应用底部的播放、暂停、上一首、下一首按钮自动转为调用 Spotify 远程播放控制 API。
+- QQ 音乐歌词源升级为最高优先级，支持 QRC 逐字时间轴、原唱与版本优先匹配、歌词选择、全局/单曲延迟和本地 LRU 缓存；网易云歌词仅在 QQ 无可靠匹配时作为逐行兜底。
+- 优化卡拉 OK 逐字高亮、翻译显示、片头创作者信息过滤，以及长间奏的 Apple Music 风格呼吸点动画。
+
 ## v1.1.1
 
 - P0 installer safety fix: installation now defaults to the first available non-C drive from `D:\Mineradio` through `Z:\Mineradio`; it falls back to `C:\Mineradio` only when no D-Z drive exists.

@@ -55,6 +55,8 @@
     "lyricGlow": true,
     "lyricGlowBeat": true,
     "lyricGlowParticles": false,
+    "lyricTranslation": true,
+    "lyricProviderPriority": "qq",
     "desktopLyrics": false,
     "desktopLyricsSize": 1,
     "desktopLyricsOpacity": 0.92,

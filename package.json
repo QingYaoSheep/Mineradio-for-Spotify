@@ -1,19 +1,30 @@
 {
-  "name": "mineradio",
-  "productName": "Mineradio",
-  "version": "1.1.1",
-  "description": "沉浸式音乐播放器，融合天气电台、歌词舞台、粒子视觉和 3D 歌单架。",
-  "author": "Mineradio",
+  "name": "mineradio-for-spotify",
+  "productName": "Mineradio for Spotify",
+  "version": "1.1.2",
+  "description": "面向 Spotify 的沉浸式桌面音乐可视化播放器，融合逐字歌词、粒子舞台和 3D 歌单架。",
+  "author": "XxHuberrr",
+  "license": "GPL-3.0-only",
+  "homepage": "https://github.com/XxHuberrr/Mineradio#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/XxHuberrr/Mineradio.git"
+  },
+  "bugs": {
+    "url": "https://github.com/XxHuberrr/Mineradio/issues"
+  },
   "main": "desktop/main.js",
   "private": true,
   "scripts": {
     "start": "electron .",
     "build:win": "electron-builder --win nsis",
-    "build:win:dir": "electron-builder --win dir"
+    "build:win:dir": "electron-builder --win dir",
+    "verify:spotify": "node scripts/verify-spotify-pkce-security.js && node scripts/verify-spotify-pkce-flow.js && node scripts/verify-spotify-pkce-http.js && node scripts/verify-spotify-mode-routing.js && node scripts/verify-spotify-playlist-loader.js",
+    "verify:release": "node scripts/verify-github-release-readiness.js && npm run verify:spotify"
   },
   "build": {
     "appId": "com.mineradio.desktop",
-    "productName": "Mineradio",
+    "productName": "Mineradio for Spotify",
     "directories": {
       "output": "dist",
       "buildResources": "build"
@@ -28,6 +39,10 @@
       "build/**/*",
       "server.js",
       "dj-analyzer.js",
+      "qq-lyric-codec.js",
+      "lyric-cache.js",
+      "spotify-auth-session.js",
+      "spotify-secure-auth-store.js",
       "package.json",
       "!public/index.*.html",
       "public/index.html"
@@ -52,14 +67,14 @@
       "allowToChangeInstallationDirectory": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Mineradio",
+      "shortcutName": "Mineradio for Spotify",
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
       "installerSidebar": "build/installerSidebar.bmp",
       "uninstallerSidebar": "build/installerSidebar.bmp",
       "installerHeader": "build/installerHeader.bmp",
       "include": "build/installer.nsh",
-      "artifactName": "Mineradio-${version}-Setup.${ext}"
+      "artifactName": "Mineradio-for-Spotify-${version}-Setup.${ext}"
     },
     "publish": [
       {
