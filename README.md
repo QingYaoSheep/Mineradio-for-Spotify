@@ -2,7 +2,8 @@
 
 Mineradio for Spotify 是一款 Windows 桌面 Spotify 遥控器与沉浸式歌词可视化播放器。它将 Spotify 当前播放状态、QQ 音乐优先歌词、逐字卡拉 OK、粒子视觉和 3D 歌单架组合成一个私人音乐舞台。
 
-注意：由于 Spotify 接口限制，启用了 Spotify 模式下的 Mineradio 将变成歌词显示器，音乐将仍由 Spotify 客户端播放！
+> [!IMPORTANT]
+> 由于 Spotify 接口限制，启用了 Spotify 模式下的 Mineradio 将变成歌词显示器，音乐将仍由 Spotify 客户端播放！
 
 ## 作者支持
 
@@ -13,8 +14,6 @@ Mineradio for Spotify 是一款 Windows 桌面 Spotify 遥控器与沉浸式歌�
 ## 当前版本
 
 当前版本：`1.1.2`
-
-状态：v1.1.2 GitHub 发布候选版。
 
 ## 核心特性
 
