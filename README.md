@@ -8,7 +8,7 @@ Mineradio for Spotify 是一款 Windows 桌面 Spotify 遥控器与沉浸式歌�
 
 [查看完整支持页](./docs/SUPPORT.md)
 
-!\[Mineradio 原作者支持渠道](./docs/assets/support/mineradio-author-support-poster.png)
+![Mineradio 作者支持渠道](./docs/assets/support/mineradio-author-support-poster.png)
 
 ## 当前版本
 
