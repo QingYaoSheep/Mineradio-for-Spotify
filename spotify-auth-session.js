@@ -11,6 +11,13 @@ const DEFAULT_SCOPES = [
   'user-read-currently-playing',
   'playlist-read-private',
   'playlist-read-collaborative',
+  'playlist-modify-private',
+  'playlist-modify-public',
+  'user-library-read',
+  'user-library-modify',
+  'user-read-private',
+  'user-read-recently-played',
+  'user-top-read',
 ];
 
 function base64Url(buffer) {

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="../../public/css/index.css">
+  <style>
+    .splash-word-mine,
+    .splash-word-radio {
+      animation: none !important;
+      opacity: 1 !important;
+      transform: none !important;
+    }
+    .splash-word-i::after {
+      animation: none !important;
+      opacity: 1 !important;
+      transform: translate(-50%, 0) !important;
+    }
+  </style>
+</head>
+<body class="splash-active">
+  <div id="splash">
+    <div class="splash-content">
+      <div class="splash-wordmark" id="splash-wordmark" aria-label="Better Radio">
+        <span class="splash-word-mine">Better</span>
+        <span class="splash-word-radio" aria-label="Radio">Rad<span class="splash-word-i" aria-hidden="true"></span><span class="splash-word-o">o</span></span>
+      </div>
+    </div>
+  </div>
+  <pre id="splash-wordmark-result" data-done="false"></pre>
+  <script>
+    setTimeout(function () {
+      var better = document.querySelector('.splash-word-mine').getBoundingClientRect();
+      var radio = document.querySelector('.splash-word-radio').getBoundingClientRect();
+      var gap = radio.left - better.right;
+      var result = document.getElementById('splash-wordmark-result');
+      result.textContent = JSON.stringify({
+        gap: gap,
+        better: { left: better.left, right: better.right, width: better.width },
+        radio: { left: radio.left, right: radio.right, width: radio.width }
+      });
+      result.dataset.done = 'true';
+    }, 50);
+  </script>
+</body>
+</html>

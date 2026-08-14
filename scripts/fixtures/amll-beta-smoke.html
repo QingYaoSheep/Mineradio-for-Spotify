@@ -1,0 +1,1808 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="../../public/vendor/amll-core.css">
+  <link rel="stylesheet" href="../../public/css/apple-music-lyrics-beta.css">
+  <style>
+    html, body { width: 1280px; height: 720px; margin: 0; background: #18202b; }
+    #apple-music-lyrics-beta-stage { top: 0; right: 0; bottom: 0; left: 0; }
+  </style>
+</head>
+<body>
+  <div id="apple-music-lyrics-beta-card"><small id="apple-music-lyrics-beta-summary"></small></div>
+  <div id="apple-music-lyrics-beta-stage" aria-hidden="true">
+    <div id="apple-music-lyrics-beta-surface"></div>
+    <div id="apple-music-lyrics-beta-empty"></div>
+  </div>
+  <div id="apple-music-lyrics-beta-settings">
+    <div class="amll-beta-settings-page">
+      <input type="checkbox" data-amll-setting="enabled">
+      <label class="amll-beta-setting-row toggle" id="amll-beta-smoke-toggle-row">
+        <span>显示音译</span>
+        <input type="checkbox" data-amll-setting="showRomanization">
+      </label>
+      <input type="range" min="0" max="1.5" step="0.05" data-amll-setting="futureBlur">
+      <input type="range" min="0.35" max="0.9" step="0.01" data-amll-setting="romanizationScale">
+      <input type="checkbox" data-amll-setting="wordAdvanceEnabled">
+      <button id="apple-music-lyrics-beta-reset" type="button">恢复默认</button>
+    </div>
+  </div>
+  <script>
+    const fixtureParams = new URLSearchParams(location.search);
+    if (!fixtureParams.has('opacityReload')) {
+      localStorage.setItem('mineradio-apple-music-lyrics-beta-v1', JSON.stringify({
+        enabled: true,
+        showTranslation: true,
+        showRomanization: true,
+        translationOpacity: 0.21,
+        romanizationOpacity: 0.22,
+        currentOriginalOpacity: 0.23,
+        nonCurrentOriginalOpacity: 0.24,
+        currentTranslationOpacity: 0.25,
+        nonCurrentTranslationOpacity: 0.26,
+        currentRomanizationOpacity: 0.27,
+        nonCurrentRomanizationOpacity: 0.28,
+        unplayedWordOpacity: 0.29,
+        backgroundVocalOpacity: 0.3,
+        romanizationScale: 0.68,
+        renderQuality: 'high'
+      }));
+    }
+    window.confirm = function(){ return true; };
+    window.fx = { particleLyrics: true, spotifyMode: false };
+    window.playing = true;
+    window.desktopWindow = {
+      getState: function(){ return Promise.resolve({ isMinimized:false, isVisible:true }); },
+      onStateChange: function(callback){ window.desktopStateListener = callback; return function(){ window.desktopStateListener = null; }; }
+    };
+    const opacitySmoke = new URLSearchParams(location.search).has('opacitySmoke');
+    if (opacitySmoke) {
+      window.requestAnimationFrame = callback =>
+        window.setTimeout(() => callback(performance.now()), 16);
+      window.cancelAnimationFrame = handle => window.clearTimeout(handle);
+    }
+    window.testLyricTime = opacitySmoke ? 1 : 1.4;
+    window.getLyricPlaybackSeconds = function(){ return window.testLyricTime; };
+    window.getPlaybackDurationSeconds = function(){ return 24; };
+    window.getLyricDelayMs = function(){ return 0; };
+    window.currentLyricSong = function(){ return { name:'Beta Smoke' }; };
+    window.stageLyrics = { group:{ visible:true } };
+    window.tickLyricsParticles = function(){};
+    window.lyricTrackLoading = false;
+    window.lyricsTimingSource = 'qrc-word';
+    window.lyricsBlankSegments = [{ start:3, end:9, duration:6 }];
+    window.getActiveLyricBlankSegment = function(segments, time) {
+      return segments.find(function(segment){ return time >= segment.start && time < segment.end; }) || null;
+    };
+    window.getLyricBreathDotState = function(segment, now) {
+      const duration = segment.end - segment.start;
+      const elapsed = Math.max(0, Math.min(duration, now - segment.start));
+      const breathDuration = Math.max(.001, duration - Math.min(.3, duration));
+      const step = breathDuration / 3;
+      return {
+        pulses:[0,1,2].map(function(index) {
+          const progress = Math.max(0, Math.min(1, (elapsed - index * step) / step));
+          return progress <= 0 ? 0 : (progress >= 1 ? 1 : Math.sin(Math.PI * .5 * progress));
+        })
+      };
+    };
+    window.lyricsLines = [{
+      t:1,
+      duration:2,
+      sourceEnd:3,
+      text:'알잖아 이건 언어 이상의 signs',
+      transText:'你知道的 这是 signs 都难以表达的迹象',
+      romanText:'al jan ha i geon eo neo i sang ui signs',
+      source:'qrc-word',
+      nativeQqKaraoke:true,
+      romanTokens:[
+        { sourceText:'알잖아', romanized:'al jan ha', c0:0, c1:3, sourceNodeIndexes:[0] },
+        { sourceText:'이건', romanized:'i geon', c0:4, c1:6, sourceNodeIndexes:[1] },
+        { sourceText:'언어', romanized:'eo neo', c0:7, c1:9, sourceNodeIndexes:[2] },
+        { sourceText:'이상의', romanized:'i sang ui', c0:10, c1:13, sourceNodeIndexes:[3] },
+        { sourceText:'signs', romanized:'signs', c0:14, c1:19, sourceNodeIndexes:[4] }
+      ],
+      karaokeTimeline:[
+        { text:'알잖아 ', start:1, duration:.4, c0:0, c1:4, timed:true },
+        { text:'이건 ', start:1.4, duration:.4, c0:4, c1:7, timed:true },
+        { text:'언어 ', start:1.8, duration:.4, c0:7, c1:10, timed:true },
+        { text:'이상의 ', start:2.2, duration:.4, c0:10, c1:14, timed:true },
+        { text:'signs', start:2.6, duration:.4, c0:14, c1:19, timed:true }
+      ]
+    }, {
+      t:9,
+      duration:2,
+      sourceEnd:11,
+      text:'뜨거운, signs',
+      transText:'炽热的 signs',
+      romanText:'tteu geo un, signs',
+      romanLanguage:'ko',
+      source:'qrc-word',
+      nativeQqKaraoke:true,
+      romanTokens:[
+        { sourceText:'뜨거운,', romanized:'tteu geo un,', c0:0, c1:4, sourceNodeIndexes:[0] },
+        { sourceText:'signs', romanized:'signs', c0:5, c1:10, sourceNodeIndexes:[1] }
+      ],
+      karaokeTimeline:[
+        { text:'뜨거운, ', start:9, duration:1, c0:0, c1:5, timed:true },
+        { text:'signs', start:10, duration:1, c0:5, c1:10, timed:true }
+      ]
+    }, {
+      t:9.5,
+      duration:2,
+      sourceEnd:11.5,
+      text:'background reply',
+      source:'qrc-word',
+      nativeQqKaraoke:true,
+      isBG:true,
+      karaokeTimeline:[
+        { text:'background ', start:9.5, duration:1, timed:true },
+        { text:'reply', start:10.5, duration:1, timed:true }
+      ]
+    }, {
+      t:12,
+      duration:2,
+      sourceEnd:14,
+      text:'君の',
+      romanText:'kimi no',
+      romanLanguage:'ja',
+      source:'qrc-word',
+      nativeQqKaraoke:true,
+      romanTokens:[
+        { sourceText:'君の', romanized:'kimi no', c0:0, c1:2, sourceNodeIndexes:[0] }
+      ],
+      karaokeTimeline:[
+        { text:'君の', start:12, duration:2, c0:0, c1:2, timed:true }
+      ]
+    }, {
+      t:15,
+      duration:2,
+      sourceEnd:17,
+      text:'한 눈 깜짝 감게 해 Baby',
+      transText:'让人瞬间闭上眼',
+      romanText:'han nun kkam jjak gam ge hae Baby',
+      romanLanguage:'ko',
+      romanTokens:[
+        { sourceText:'한', romanized:'han', c0:0, c1:1 },
+        { sourceText:'눈', romanized:'nun', c0:2, c1:3 },
+        { sourceText:'깜짝', romanized:'kkam jjak', c0:4, c1:6 },
+        { sourceText:'감게', romanized:'gam ge', c0:7, c1:9 },
+        { sourceText:'해', romanized:'hae', c0:10, c1:11 },
+        { sourceText:'Baby', romanized:'Baby', c0:12, c1:16 },
+      ],
+      source:'lrc'
+    }, {
+      t:18,
+      duration:2,
+      sourceEnd:20,
+      text:'rapid finish',
+      transText:'快速补完',
+      source:'qrc-word',
+      nativeQqKaraoke:true,
+      karaokeTimeline:[
+        { text:'rapid ', start:18, duration:1, timed:true },
+        { text:'finish', start:19, duration:1, timed:true }
+      ]
+    }, {
+      t:20,
+      duration:2,
+      sourceEnd:22,
+      text:'next line',
+      transText:'下一句',
+      source:'qrc-word',
+      nativeQqKaraoke:true,
+      karaokeTimeline:[
+        { text:'next ', start:20, duration:1, timed:true },
+        { text:'line', start:21, duration:1, timed:true }
+      ]
+    }];
+  </script>
+  <script src="../../public/js/lyric-credit-filter.js"></script>
+  <script src="../../public/vendor/amll-core.bundle.js"></script>
+  <script src="../../public/js/apple-music-lyrics-beta-model.js"></script>
+  <script src="../../public/js/apple-music-lyrics-beta.js"></script>
+  <script>
+    if (new URLSearchParams(location.search).has('opacitySmoke')) {
+      const result = document.createElement('pre');
+      result.id = 'amll-opacity-smoke-result';
+      result.textContent = 'pending';
+      document.body.appendChild(result);
+      const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+      const waitFor = async (test, timeout = 15000) => {
+        const started = performance.now();
+        while (performance.now() - started < timeout) {
+          if (test()) return;
+          await wait(50);
+        }
+        throw new Error('opacity smoke timeout');
+      };
+      const styleChain = element => {
+        const chain = [];
+        for (let node = element; node; node = node.parentElement) {
+          const style = getComputedStyle(node);
+          chain.push({
+            className: node.className || node.id || node.tagName,
+            opacity: style.opacity,
+            color: style.color,
+            filter: style.filter,
+            visibility: style.visibility,
+          });
+        }
+        return chain;
+      };
+      const snapshot = () => Array.from(document.querySelectorAll('.FmKaba_lyricLineWrapper'))
+        .map(wrapper => {
+          const translation = wrapper.querySelector('.FmKaba_lyricSubLine:nth-child(2)');
+          const romanization = wrapper.querySelector('.FmKaba_lyricSubLine:nth-child(3)');
+           const romanWord = wrapper.querySelector('.FmKaba_romanWord');
+           const mainLine = wrapper.querySelector('.FmKaba_lyricMainLine');
+           const innerLine = wrapper.querySelector('.FmKaba_lyricLine');
+           const backgroundLine = wrapper.querySelector('.FmKaba_lyricBgLine');
+           const backgroundMainLine = backgroundLine
+             ? backgroundLine.querySelector('.FmKaba_lyricMainLine')
+             : null;
+           const originalRun = mainLine && mainLine.querySelector(
+             '.mineradio-amll-original-run:not(.FmKaba_romanWord .mineradio-amll-original-run)'
+           );
+           const latinRuns = Array.from(wrapper.querySelectorAll('.mineradio-amll-latin-run')).map(run => ({
+             text:run.textContent,
+             letterSpacing:getComputedStyle(run).letterSpacing,
+             fontSize:getComputedStyle(run).fontSize,
+             inOriginal:!!run.closest('.FmKaba_lyricMainLine') && !run.closest('.FmKaba_romanWord'),
+             inTranslation:!!run.closest('.FmKaba_lyricSubLine:nth-child(2)'),
+             inRomanization:!!run.closest('.FmKaba_romanWord, .FmKaba_lyricSubLine:nth-child(3)'),
+           }));
+           const nonLatinOriginalRuns = Array.from(
+             mainLine ? mainLine.querySelectorAll('.mineradio-amll-original-run:not(.mineradio-amll-latin-run)') : []
+           ).filter(run => !run.closest('.FmKaba_romanWord')).map(run => ({
+             text:run.textContent,
+             letterSpacing:getComputedStyle(run).letterSpacing,
+           }));
+           const koreanColumns = Array.from(
+             wrapper.querySelectorAll('.mineradio-amll-korean-column')
+           ).map(column => {
+             const source = column.querySelector('.mineradio-amll-korean-source');
+             const roman = column.querySelector('.mineradio-amll-korean-roman');
+             const sourceRect = source && source.getBoundingClientRect();
+             const romanRect = roman && roman.getBoundingClientRect();
+             return {
+               sourceText:source && source.textContent,
+               romanized:roman && (roman.getAttribute('aria-label') || roman.textContent),
+               columnTop:column.getBoundingClientRect().top,
+               sourceLeft:sourceRect && sourceRect.left,
+               romanLeft:romanRect && romanRect.left,
+               sourceWidth:sourceRect && sourceRect.width,
+               romanWidth:romanRect && romanRect.width,
+               sourceFontSize:source && getComputedStyle(source).fontSize,
+               romanFontSize:roman && getComputedStyle(roman).fontSize,
+               romanTransform:roman && getComputedStyle(roman).transform,
+             };
+           });
+            const romanWordSegments = Array.from(
+              wrapper.querySelectorAll('.FmKaba_lyricMainLine .FmKaba_romanWord')
+            ).map(romanWord => {
+              const wordElement = romanWord.closest('.FmKaba_wordWithRuby') || romanWord.parentElement;
+              const sourceMotion = wordElement && wordElement.querySelector(
+                ':scope > .mineradio-amll-source-motion, '
+                + ':scope > .FmKaba_wordBody > .mineradio-amll-source-motion'
+              );
+              const wordStyle = wordElement && getComputedStyle(wordElement);
+              const maskSize = wordStyle ? parseFloat(wordStyle.maskSize) : NaN;
+              const sourceStyle = sourceMotion && getComputedStyle(sourceMotion);
+              const sourceFontSize = sourceStyle ? parseFloat(sourceStyle.fontSize) : NaN;
+              const wordRect = wordElement && wordElement.getBoundingClientRect();
+              const mainRect = mainLine && mainLine.getBoundingClientRect();
+              const sourceRect = sourceMotion && sourceMotion.getBoundingClientRect();
+              const romanRect = romanWord.getBoundingClientRect();
+              const segments = Array.from(
+                romanWord.querySelectorAll('.mineradio-amll-roman-syllable')
+              );
+             const fontSize = parseFloat(getComputedStyle(romanWord).fontSize) || 1;
+             return {
+               text:romanWord.getAttribute('aria-label') || romanWord.textContent.trim(),
+               segments:segments.map(segment => segment.textContent),
+                gapsEm:segments.slice(1).map((segment, index) => {
+                 const previous = segments[index].getBoundingClientRect();
+                 const current = segment.getBoundingClientRect();
+                  return (current.left - previous.right) / fontSize;
+                }),
+                maskFadeWidth:Number.isFinite(maskSize) && wordRect
+                  ? Math.max(0, maskSize / 100 - 2) * wordElement.clientWidth
+                  : null,
+                expectedSourceFadeWidth:Number.isFinite(sourceFontSize)
+                  ? sourceFontSize * 0.5
+                  : null,
+                sourceMotionCount:wordElement
+                  ? wordElement.querySelectorAll('.mineradio-amll-source-motion').length
+                  : 0,
+                sourceFloatAnimationCount:sourceMotion
+                  ? sourceMotion.getAnimations().filter(animation => animation.id === 'float-word').length
+                  : 0,
+                sourceFloatKeyframes:sourceMotion
+                  ? sourceMotion.getAnimations().filter(animation => animation.id === 'float-word')
+                    .flatMap(animation => animation.effect.getKeyframes().map(keyframe => keyframe.transform))
+                  : [],
+                romanFloatAnimationCount:romanWord.getAnimations({ subtree:true })
+                  .filter(animation => animation.id === 'float-word').length,
+                romanTop:romanRect.top,
+                romanOffsetFromMain:mainRect ? romanRect.top - mainRect.top : null,
+                sourceOffsetFromMain:mainRect && sourceRect ? sourceRect.top - mainRect.top : null,
+              };
+            });
+           const appleKoreanLexicalWords = Array.from(
+             wrapper.querySelectorAll('.FmKaba_wordWithRuby')
+           ).map(word => {
+             const ruby = word.querySelector('.FmKaba_rubyWord');
+             const body = word.querySelector('.FmKaba_wordBody');
+             const roman = body && body.querySelector('.FmKaba_romanWord');
+             const sourceChildren = body && Array.from(body.children)
+               .filter(child => !child.classList.contains('FmKaba_romanWord'));
+             if (!ruby || !ruby.children.length || !sourceChildren.length || !roman) return null;
+             const glyphRects = [];
+             sourceChildren.forEach(sourceChild => {
+               const walker = document.createTreeWalker(sourceChild, NodeFilter.SHOW_TEXT);
+               while (walker.nextNode()) {
+                 const textNode = walker.currentNode;
+                 for (let offset = 0; offset < textNode.data.length; offset++) {
+                   if (!/[가-힣]/u.test(textNode.data[offset])) continue;
+                   const range = document.createRange();
+                   range.setStart(textNode, offset);
+                   range.setEnd(textNode, offset + 1);
+                   glyphRects.push(range.getBoundingClientRect());
+                 }
+               }
+             });
+             let sourceGapEm = null;
+             if (glyphRects.length >= 2) {
+               const fontSize = parseFloat(getComputedStyle(sourceChildren[0]).fontSize) || 1;
+               sourceGapEm = (glyphRects[1].left - glyphRects[0].right) / fontSize;
+             }
+             const romanRect = roman.getBoundingClientRect();
+             return {
+               sourceText:sourceChildren.map(child => child.textContent).join('').trim(),
+               romanized:roman.getAttribute('aria-label') || roman.textContent.trim(),
+               lexicalTiming:word.hasAttribute('data-mineradio-apple-korean-lexical-timing'),
+               isBackground:!!word.closest('.FmKaba_lyricBgLine'),
+               maskPosition:getComputedStyle(word).maskPosition,
+               sourceGapEm,
+               sourceLeft:glyphRects.length ? glyphRects[0].left
+                 : sourceChildren[0].getBoundingClientRect().left,
+               romanLeft:romanRect.left,
+               rubyDisplay:getComputedStyle(ruby).display,
+               rubyTimes:Array.from(ruby.children).map(segment => ({
+                 text:segment.textContent,
+                 start:Number(segment.dataset.startTime),
+                 end:Number(segment.dataset.endTime),
+               })),
+             };
+           }).filter(Boolean);
+           const appleKoreanWordColumns = Array.from(
+             wrapper.querySelectorAll('.FmKaba_wordWithRuby')
+           ).map(word => {
+             const body = word.querySelector(':scope > .FmKaba_wordBody');
+             const roman = body && body.querySelector(':scope > .FmKaba_romanWord');
+             if (!body || !roman) return null;
+              const sourceLayer = body.querySelector(':scope > .mineradio-amll-apple-word-source');
+              const sourceMotion = body.querySelector('.mineradio-amll-source-motion');
+             const sourceRoots = sourceLayer ? [sourceLayer] : Array.from(body.children)
+               .filter(child => child !== roman);
+             const glyphRects = [];
+             sourceRoots.forEach(root => {
+               const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+               while (walker.nextNode()) {
+                 const textNode = walker.currentNode;
+                 for (let offset = 0; offset < textNode.data.length; offset++) {
+                   if (!/\S/u.test(textNode.data[offset])) continue;
+                   const range = document.createRange();
+                   range.setStart(textNode, offset);
+                   range.setEnd(textNode, offset + 1);
+                   glyphRects.push(range.getBoundingClientRect());
+                 }
+               }
+             });
+             if (!glyphRects.length) return null;
+             const sourceLeft = Math.min(...glyphRects.map(rect => rect.left));
+             const sourceRight = Math.max(...glyphRects.map(rect => rect.right));
+             const sourceFontSize = parseFloat(getComputedStyle(sourceRoots[0]).fontSize) || 1;
+             const romanRect = roman.getBoundingClientRect();
+              const bodyRect = body.getBoundingClientRect();
+              const wordStyle = getComputedStyle(word);
+              const maskSize = parseFloat(wordStyle.maskSize);
+              const sourceMotionStyle = sourceMotion && getComputedStyle(sourceMotion);
+              return {
+               sourceText:sourceRoots.map(root => root.textContent).join('').trim(),
+               romanized:roman.getAttribute('aria-label') || roman.textContent.trim(),
+               wordLayout:word.hasAttribute('data-mineradio-apple-korean-word-layout'),
+               lexicalTiming:word.hasAttribute('data-mineradio-apple-korean-lexical-timing'),
+               sourceLeft,
+               sourceWidth:sourceRight - sourceLeft,
+               romanLeft:romanRect.left,
+               romanWidth:romanRect.width,
+               romanFontSize:getComputedStyle(roman).fontSize,
+               columnWidth:bodyRect.width,
+               columnTop:word.getBoundingClientRect().top,
+               glyphRows:new Set(glyphRects.map(rect => Math.round(rect.top))).size,
+                glyphTopSpreadEm:(Math.max(...glyphRects.map(rect => rect.top))
+                  - Math.min(...glyphRects.map(rect => rect.top))) / sourceFontSize,
+                maskFadeWidth:Number.isFinite(maskSize)
+                  ? Math.max(0, maskSize / 100 - 2) * word.clientWidth
+                  : null,
+                expectedSourceFadeWidth:sourceMotionStyle
+                  ? parseFloat(sourceMotionStyle.fontSize) * 0.5
+                  : null,
+                sourceMotionCount:word.querySelectorAll('.mineradio-amll-source-motion').length,
+                sourceFloatAnimationCount:sourceMotion
+                  ? sourceMotion.getAnimations().filter(animation => animation.id === 'float-word').length
+                  : 0,
+                sourceFloatKeyframes:sourceMotion
+                  ? sourceMotion.getAnimations().filter(animation => animation.id === 'float-word')
+                    .flatMap(animation => animation.effect.getKeyframes().map(keyframe => keyframe.transform))
+                  : [],
+                romanFloatAnimationCount:roman.getAnimations({ subtree:true })
+                  .filter(animation => animation.id === 'float-word').length,
+              };
+           }).filter(Boolean);
+           const appleKoreanLexicalMarkerCount = wrapper.querySelectorAll(
+             '.FmKaba_wordWithRuby[data-mineradio-apple-korean-lexical-timing]'
+           ).length;
+           return {
+             text: mainLine ? mainLine.textContent.trim().replace(/\s+/g, ' ') : '',
+             state: wrapper.getAttribute('data-mineradio-line-state'),
+             anchorCurrent:wrapper.hasAttribute('data-mineradio-anchor-current'),
+             wrapperTop:wrapper.getBoundingClientRect().top,
+             anchorY:(() => {
+               const stage = document.getElementById('apple-music-lyrics-beta-surface');
+               const rect = stage.getBoundingClientRect();
+               return rect.top + rect.height * window.MineradioAppleMusicLyrics.getSettings().anchorPosition;
+             })(),
+            wrapperOpacity: getComputedStyle(wrapper).opacity,
+            innerOpacity: innerLine ? getComputedStyle(innerLine).opacity : 0,
+            translationRootOpacity: getComputedStyle(
+              document.querySelector('.mineradio-amll-player')
+            ).getPropertyValue('--amll-beta-translation-opacity').trim(),
+            translationLineOpacity: getComputedStyle(wrapper)
+              .getPropertyValue('--amll-beta-translation-line-opacity').trim(),
+            translationStyle: translation ? translation.getAttribute('style') : null,
+            translationTransition: translation ? getComputedStyle(translation).transitionProperty : null,
+            translationAnimations: translation ? translation.getAnimations().map(animation => ({
+              id: animation.id,
+              currentTime: animation.currentTime,
+              playState: animation.playState,
+              keyframes: animation.effect && typeof animation.effect.getKeyframes === 'function'
+                ? animation.effect.getKeyframes().map(keyframe => ({
+                  offset:keyframe.offset,
+                  opacity:keyframe.opacity,
+                }))
+                : [],
+            })) : [],
+            translation: translation ? styleChain(translation) : null,
+             romanization: romanization && romanization.textContent.trim()
+               ? styleChain(romanization)
+               : null,
+             romanWord: romanWord ? styleChain(romanWord) : null,
+             romanWordSegments,
+             appleKoreanLexicalTiming:appleKoreanLexicalWords.some(word => word.lexicalTiming),
+             appleKoreanLexicalWords,
+             appleKoreanWordColumns,
+             appleKoreanLexicalMarkerCount,
+             koreanColumns,
+             flatRomanDisplay:romanization ? getComputedStyle(romanization).display : null,
+             original: originalRun ? styleChain(originalRun) : null,
+             background: backgroundLine ? styleChain(backgroundLine) : null,
+             latinRuns,
+             nonLatinOriginalRuns,
+             emphasisAnimations: mainLine ? mainLine.getAnimations({ subtree:true })
+               .map(animation => String(animation.id || ''))
+               .filter(id => id.includes('emphasize-word')) : [],
+            romanizationAnimations: [romanization, romanWord].filter(Boolean).flatMap(element =>
+              element.getAnimations().filter(animation => {
+                const effect = animation.effect;
+                if (!effect || typeof effect.getKeyframes !== 'function') return false;
+                return effect.getKeyframes().some(keyframe => keyframe.opacity !== undefined);
+              }).map(animation => ({ id:animation.id, playState:animation.playState }))
+            ),
+             darkMaskAlpha: mainLine
+               ? getComputedStyle(mainLine).getPropertyValue('--dark-mask-alpha').trim()
+               : '',
+             brightMaskAlpha: mainLine
+               ? getComputedStyle(mainLine).getPropertyValue('--bright-mask-alpha').trim()
+               : '',
+             backgroundDarkMaskAlpha: backgroundMainLine
+               ? getComputedStyle(backgroundMainLine).getPropertyValue('--dark-mask-alpha').trim()
+               : '',
+             backgroundBrightMaskAlpha: backgroundMainLine
+               ? getComputedStyle(backgroundMainLine).getPropertyValue('--bright-mask-alpha').trim()
+               : '',
+             backgroundText: backgroundMainLine
+               ? backgroundMainLine.textContent.trim().replace(/\s+/g, ' ')
+               : '',
+             backgroundAnimations: backgroundLine ? backgroundLine.getAnimations({ subtree:true })
+               .map(animation => ({
+                 id:String(animation.id || ''),
+                 currentTime:Number(animation.currentTime),
+                 playState:animation.playState,
+               })).filter(animation => Number.isFinite(animation.currentTime)) : [],
+             maskAnimationTimes: mainLine ? mainLine.getAnimations({ subtree:true })
+               .filter(animation => !String(animation.id || '').includes('emphasize-word'))
+               .map(animation => Number(animation.currentTime))
+               .filter(Number.isFinite)
+               .sort((a, b) => a - b) : [],
+          };
+        });
+      const advanceTo = async targetTime => {
+        while (window.testLyricTime < targetTime) {
+          window.testLyricTime = Math.min(targetTime, window.testLyricTime + 0.05);
+          await wait(16);
+        }
+      };
+      (async () => {
+        try {
+          await waitFor(() => window.MineradioAppleMusicLyrics
+            && document.querySelectorAll('.FmKaba_lyricLineWrapper').length === 6);
+          await waitFor(() => document.body.classList.contains('apple-music-lyrics-beta-active')
+            && document.getElementById('apple-music-lyrics-beta-stage').classList.contains('active'));
+          await waitFor(() => Number.parseFloat(getComputedStyle(
+            document.getElementById('apple-music-lyrics-beta-stage')
+          ).opacity) > 0.999);
+          const removedOpacitySettings = [
+            'translationOpacity',
+            'romanizationOpacity',
+            'currentOriginalOpacity',
+            'nonCurrentOriginalOpacity',
+            'currentTranslationOpacity',
+            'nonCurrentTranslationOpacity',
+            'currentRomanizationOpacity',
+            'nonCurrentRomanizationOpacity',
+            'unplayedWordOpacity',
+            'backgroundVocalOpacity',
+          ];
+          await waitFor(() => removedOpacitySettings.every(key =>
+            !Object.prototype.hasOwnProperty.call(window.MineradioAppleMusicLyrics.getSettings(), key)
+          ));
+          const futureBlurControl = document.querySelector('[data-amll-setting="futureBlur"]');
+          futureBlurControl.value = '1.25';
+          futureBlurControl.dispatchEvent(new Event('input', { bubbles:true }));
+          await waitFor(() => window.MineradioAppleMusicLyrics.getSettings().futureBlur === 1.25);
+          await waitFor(() => Array.from(document.querySelectorAll('.FmKaba_lyricLineWrapper'))
+            .some(wrapper => wrapper.getAttribute('data-mineradio-line-state') === 'current'
+              && wrapper.querySelector('.FmKaba_lyricSubLine:nth-child(2)')));
+          await wait(100);
+          const before = snapshot();
+          await advanceTo(1.4);
+          await waitFor(() => {
+            const wrappers = Array.from(document.querySelectorAll('.FmKaba_lyricLineWrapper'));
+            const translatedStateExists = state => wrappers.some(wrapper =>
+              wrapper.getAttribute('data-mineradio-line-state') === state
+              && wrapper.querySelector('.FmKaba_lyricSubLine:nth-child(2)')
+            );
+            return document.body.classList.contains('apple-music-lyrics-beta-active')
+              && document.getElementById('apple-music-lyrics-beta-stage').classList.contains('active')
+              && translatedStateExists('current')
+              && translatedStateExists('future');
+          });
+          await wait(100);
+          const rolling = snapshot();
+          await advanceTo(10.2);
+          await waitFor(() => Array.from(document.querySelectorAll('.FmKaba_lyricLineWrapper'))
+            .some(wrapper => wrapper.getAttribute('data-mineradio-line-state') === 'current'
+              && wrapper.querySelector('.FmKaba_lyricSubLine:nth-child(2)')));
+          await wait(100);
+          const later = snapshot();
+          await advanceTo(15.4);
+          await waitFor(() => Array.from(document.querySelectorAll('.FmKaba_lyricLineWrapper'))
+            .some(wrapper => wrapper.getAttribute('data-mineradio-line-state') === 'current'
+              && wrapper.querySelector('.FmKaba_lyricSubLine:nth-child(3)').textContent.trim()));
+          await wait(100);
+          const lrc = snapshot();
+          const romanizationScaleControl = document.querySelector('[data-amll-setting="romanizationScale"]');
+          romanizationScaleControl.value = '0.5';
+          romanizationScaleControl.dispatchEvent(new Event('input', { bubbles:true }));
+          await waitFor(() => window.MineradioAppleMusicLyrics.getSettings().romanizationScale === 0.5);
+          await wait(720);
+          const lrcRescaled = snapshot();
+          romanizationScaleControl.value = '0.68';
+          romanizationScaleControl.dispatchEvent(new Event('input', { bubbles:true }));
+          await waitFor(() => window.MineradioAppleMusicLyrics.getSettings().romanizationScale === 0.68);
+          await wait(520);
+          const betaSurface = document.getElementById('apple-music-lyrics-beta-surface');
+          document.documentElement.style.width = '420px';
+          document.body.style.width = '420px';
+          // Headless Chrome can freeze CSS transitions while virtual time is active.
+          // This check targets the completed resized layout, not the transition itself.
+          betaSurface.style.transition = 'none';
+          betaSurface.style.width = '240px';
+          void betaSurface.offsetWidth;
+          window.dispatchEvent(new Event('resize'));
+          await waitFor(() => snapshot().some(line => line.state === 'current'
+            && line.koreanColumns.length === 6));
+          await waitFor(() => betaSurface.clientWidth <= 241);
+          await wait(120);
+          const lrcResized = snapshot();
+          document.documentElement.style.width = '1280px';
+          document.body.style.width = '1280px';
+          betaSurface.style.width = '';
+          void betaSurface.offsetWidth;
+          betaSurface.style.transition = '';
+          window.dispatchEvent(new Event('resize'));
+          await wait(220);
+          const savedSettings = JSON.parse(localStorage.getItem('mineradio-apple-music-lyrics-beta-v1'));
+          const reloadFrame = document.createElement('iframe');
+          reloadFrame.hidden = true;
+          reloadFrame.src = location.pathname + '?opacityReload=1';
+          document.body.appendChild(reloadFrame);
+          await waitFor(() => reloadFrame.contentWindow
+            && reloadFrame.contentWindow.MineradioAppleMusicLyrics
+            && reloadFrame.contentWindow.MineradioAppleMusicLyrics.getSettings().futureBlur === 1.25
+            && removedOpacitySettings.every(key => !Object.prototype.hasOwnProperty.call(
+              reloadFrame.contentWindow.MineradioAppleMusicLyrics.getSettings(), key
+            )));
+          const reloadSettings = reloadFrame.contentWindow.MineradioAppleMusicLyrics.getSettings();
+
+          document.getElementById('apple-music-lyrics-beta-reset').click();
+          await waitFor(() => window.MineradioAppleMusicLyrics.getSettings().futureBlur === 1);
+          const enabledControl = document.querySelector('[data-amll-setting="enabled"]');
+          enabledControl.checked = true;
+          enabledControl.dispatchEvent(new Event('change', { bubbles:true }));
+          await waitFor(() => window.MineradioAppleMusicLyrics.getSettings().enabled === true);
+          window.testLyricTime = 1.4;
+          window.MineradioAppleMusicLyrics.snap();
+          await waitFor(() => Array.from(document.querySelectorAll('.FmKaba_lyricLineWrapper'))
+            .some(wrapper => wrapper.getAttribute('data-mineradio-line-state') === 'current'
+              && wrapper.querySelector('.FmKaba_romanWord')));
+          await wait(100);
+          const resetCurrent = snapshot().find(line => line.state === 'current' && line.romanWord);
+           const resetState = {
+             settings:window.MineradioAppleMusicLyrics.getSettings(),
+             darkMaskAlpha:resetCurrent && resetCurrent.darkMaskAlpha,
+             brightMaskAlpha:resetCurrent && resetCurrent.brightMaskAlpha,
+           };
+
+           reloadFrame.remove();
+           document.documentElement.style.width = '360px';
+           document.documentElement.style.height = '420px';
+           document.body.style.width = '360px';
+           document.body.style.height = '420px';
+           const virtualWordText = ['가나다라 ', '마바사아 ', '자차카타 ', '파하가나 ', '다라마바사 ', '아자차카 ', '타파하가 ', '나다라마바사'];
+           const makeVirtualizedLine = index => {
+             const start = 1 + index * 3;
+             if (index === 14) {
+               return {
+                 t:start,
+                 duration:2,
+                 sourceEnd:start + 2,
+                 text:'한 눈 깜짝 line-15',
+                 transText:'translation-15',
+                 romanText:'han nun kkam jjak line-15',
+                 romanLanguage:'ko',
+                 romanTokens:[
+                   { sourceText:'한', romanized:'han', c0:0, c1:1 },
+                   { sourceText:'눈', romanized:'nun', c0:2, c1:3 },
+                   { sourceText:'깜짝', romanized:'kkam jjak', c0:4, c1:6 },
+                   { sourceText:'line-15', romanized:'line-15', c0:7, c1:14 },
+                 ],
+                 source:'lrc'
+               };
+             }
+             return {
+               t:start,
+               duration:2,
+               sourceEnd:start + 2,
+               text:virtualWordText.join('') + ' line-' + (index + 1),
+               transText:'translation-' + (index + 1),
+               romanText:'ga na da ra ma ba sa a ja cha ka ta pa ha line ' + (index + 1),
+               source:'qrc-word',
+               nativeQqKaraoke:true,
+               romanTokens:virtualWordText.map((word, wordIndex) => ({
+                 romanized:'roman-' + (wordIndex + 1),
+                 sourceNodeIndexes:[wordIndex]
+               })),
+               karaokeTimeline:virtualWordText.map((word, wordIndex) => ({
+                 text:word + (wordIndex === virtualWordText.length - 1 ? ' line-' + (index + 1) : ''),
+                 start:start + wordIndex * .25,
+                 duration:.25,
+                 timed:true
+               }))
+             };
+           };
+           window.testLyricTime = 1.4;
+           window.lyricsLines = Array.from({ length:20 }, (_, index) => makeVirtualizedLine(index));
+           window.MineradioAppleMusicLyrics.refresh();
+           window.MineradioAppleMusicLyrics.snap();
+           window.dispatchEvent(new Event('resize'));
+           await waitFor(() => snapshot().some(line => line.text.includes('line-1') && line.state === 'current'));
+           await advanceTo(13.4);
+           await waitFor(() => snapshot().some(line => line.text.includes('line-5'))
+             && document.querySelectorAll('.FmKaba_lyricLineWrapper').length < 20);
+           await wait(260);
+           const virtualizedFifth = snapshot();
+           const playerRoot = document.querySelector('.mineradio-amll-player');
+           const virtualizedRemountPromise = new Promise((resolve, reject) => {
+             const timeout = setTimeout(() => {
+               observer.disconnect();
+               reject(new Error('virtualized future lyric did not remount'));
+             }, 3000);
+             const observer = new MutationObserver(mutations => {
+               const addedWrappers = mutations.flatMap(mutation => Array.from(mutation.addedNodes))
+                 .filter(node => node.nodeType === Node.ELEMENT_NODE
+                   && node.classList.contains('FmKaba_lyricLineWrapper'));
+               const wrapper = addedWrappers.find(node =>
+                 node.getAttribute('data-mineradio-line-state') === 'future'
+                   && node.querySelector('.mineradio-amll-korean-columns')
+               );
+               if (!wrapper) return;
+               clearTimeout(timeout);
+               observer.disconnect();
+               const mainLine = wrapper.querySelector('.FmKaba_lyricMainLine');
+               const originalRun = mainLine.querySelector(
+                 '.mineradio-amll-original-run:not(.FmKaba_romanWord .mineradio-amll-original-run)'
+               );
+               resolve({
+                 text:mainLine.textContent.trim().replace(/\s+/g, ' '),
+                 state:wrapper.getAttribute('data-mineradio-line-state'),
+                 original:originalRun ? styleChain(originalRun) : null,
+                 koreanColumns:Array.from(
+                   wrapper.querySelectorAll('.mineradio-amll-korean-column')
+                 ).map(column => [
+                   column.querySelector('.mineradio-amll-korean-source').textContent,
+                   column.querySelector('.mineradio-amll-korean-roman').getAttribute('aria-label')
+                     || column.querySelector('.mineradio-amll-korean-roman').textContent,
+                 ]),
+                 romanWordSegments:Array.from(
+                   wrapper.querySelectorAll('.FmKaba_romanWord')
+                 ).map(romanWord => ({
+                   text:romanWord.getAttribute('aria-label') || romanWord.textContent,
+                   segments:Array.from(
+                     romanWord.querySelectorAll('.mineradio-amll-roman-syllable')
+                   ).map(segment => segment.textContent),
+                 })),
+                 flatRomanDisplay:getComputedStyle(
+                   wrapper.querySelector('.FmKaba_lyricSubLine:nth-child(3)')
+                 ).display,
+               });
+             });
+             observer.observe(playerRoot, { childList:true });
+           });
+           window.MineradioAppleMusicLyrics.snap();
+           await wait(32);
+           const betaStage = document.getElementById('apple-music-lyrics-beta-stage');
+           betaStage.style.height = '6000px';
+           betaStage.style.bottom = 'auto';
+           window.dispatchEvent(new Event('resize'));
+           const virtualizedRemount = await virtualizedRemountPromise;
+           betaStage.style.height = '';
+           betaStage.style.bottom = '';
+           window.dispatchEvent(new Event('resize'));
+           await wait(260);
+           await advanceTo(16.4);
+           await waitFor(() => snapshot().some(line => line.text.includes('line-6') && line.state === 'current'));
+           await wait(260);
+           const virtualizedSixth = snapshot();
+           await advanceTo(19.4);
+           await waitFor(() => snapshot().some(line => line.text.includes('line-7') && line.state === 'current'));
+           await wait(260);
+           const virtualizedSeventh = snapshot();
+           document.documentElement.style.width = '440px';
+           document.body.style.width = '440px';
+           window.dispatchEvent(new Event('resize'));
+           window.testLyricTime = 13.4;
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => snapshot().some(line => line.text.includes('line-5') && line.state === 'current'));
+           await wait(260);
+           const virtualizedSeekBack = snapshot();
+           document.documentElement.style.width = '1280px';
+           document.documentElement.style.height = '720px';
+           document.body.style.width = '1280px';
+           document.body.style.height = '720px';
+           const backgroundClockLines = source => [{
+             t:1,
+             duration:3,
+             sourceEnd:4,
+             text:'Lead clock',
+             source,
+             nativeAppleKaraoke:source === 'apple-ttml-word',
+             nativeQqKaraoke:source === 'qrc-word',
+             karaokeTimeline:[
+               { text:'Lead ', start:1, duration:2, timed:true },
+               { text:'clock', start:3, duration:1, timed:true },
+             ],
+           }, {
+             t:3,
+             duration:2,
+             sourceEnd:5,
+             text:'（오 베이비）',
+             romanText:'(o bei bi)',
+             romanLanguage:'ko',
+             source,
+             nativeAppleKaraoke:source === 'apple-ttml-word',
+             nativeQqKaraoke:source === 'qrc-word',
+             isBG:true,
+             romanTokens:[
+               { sourceText:'오', romanized:'(o', c0:1, c1:2, sourceNodeIndexes:[1] },
+               { sourceText:'베이비', romanized:'bei bi)', c0:3, c1:6, sourceNodeIndexes:[2] },
+             ],
+             karaokeTimeline:[
+               { text:'（', start:3, duration:.1, timed:true },
+               { text:'오 ', start:3.1, duration:.8, timed:true },
+               { text:'베이비', start:3.9, duration:1, timed:true },
+               { text:'）', start:4.9, duration:.1, timed:true },
+             ],
+           }, {
+             t:4,
+             duration:2,
+             sourceEnd:6,
+             text:'Next lead clock',
+             source,
+             nativeAppleKaraoke:source === 'apple-ttml-word',
+             nativeQqKaraoke:source === 'qrc-word',
+             karaokeTimeline:[
+               { text:'Next ', start:4, duration:1, timed:true },
+               { text:'lead clock', start:5, duration:1, timed:true },
+             ],
+           }];
+           window.playing = true;
+           window.lyricsTimingSource = 'apple-ttml-word';
+           window.lyricsLines = backgroundClockLines('apple-ttml-word');
+           window.testLyricTime = 1.2;
+           window.MineradioAppleMusicLyrics.refresh();
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => snapshot().some(line => line.backgroundAnimations.length
+             && line.backgroundAnimations.every(animation => animation.currentTime < 1
+               && animation.playState === 'paused')));
+           const appleBackgroundBeforeStart = snapshot();
+           window.testLyricTime = 3.25;
+           window.MineradioAppleMusicLyrics.snap();
+           await wait(80);
+           const appleBackgroundStarted = snapshot();
+           window.playing = false;
+           window.testLyricTime = 3.4;
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => snapshot().some(line => line.backgroundAnimations.length
+             && line.backgroundAnimations.every(animation => animation.playState === 'paused')));
+           await wait(80);
+           const appleBackgroundPaused = snapshot();
+           await wait(140);
+           const appleBackgroundPausedHeld = snapshot();
+           window.playing = true;
+           await advanceTo(3.6);
+           await wait(48);
+           const appleBackgroundResumed = snapshot();
+           window.playing = false;
+           window.testLyricTime = 1.2;
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => snapshot().some(line => line.backgroundAnimations.length
+             && line.backgroundAnimations.every(animation => animation.currentTime < 1
+               && animation.playState === 'paused')));
+           const appleBackgroundSeekBack = snapshot();
+           window.testLyricTime = 5.1;
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => snapshot().some(line => line.backgroundAnimations.length
+             && line.backgroundAnimations.every(animation => animation.currentTime >= 1990
+               && animation.playState === 'paused')));
+           const appleBackgroundFinished = snapshot();
+           window.playing = true;
+           window.lyricsTimingSource = 'qrc-word';
+           window.lyricsLines = backgroundClockLines('qrc-word');
+           window.testLyricTime = 1.2;
+           window.MineradioAppleMusicLyrics.refresh();
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => snapshot().some(line => line.backgroundAnimations.length
+             && line.backgroundAnimations.every(animation => animation.currentTime < 1
+               && animation.playState === 'paused')));
+           const qrcBackgroundBeforeStart = snapshot();
+           window.testLyricTime = 3.25;
+           window.MineradioAppleMusicLyrics.snap();
+           await wait(80);
+           const qrcBackgroundStarted = snapshot();
+           window.playing = false;
+           window.lyricsTimingSource = 'apple-ttml-word';
+           window.lyricsLines = [{
+             t:1,
+             duration:4,
+             sourceEnd:5,
+             text:'Lead holding',
+             source:'apple-ttml-word',
+             nativeAppleKaraoke:true,
+             karaokeTimeline:[
+               { text:'Lead ', start:1, duration:2, timed:true },
+               { text:'holding', start:3, duration:2, timed:true },
+             ],
+           }, {
+             t:1.5,
+             duration:2,
+             sourceEnd:3.5,
+             text:'（oh）',
+             transText:'(哦)',
+             source:'apple-ttml-word',
+             nativeAppleKaraoke:true,
+             isBG:true,
+             karaokeTimeline:[
+               { text:'（', start:1.5, duration:.1, timed:true },
+               { text:'oh', start:1.6, duration:1.8, timed:true },
+               { text:'）', start:3.4, duration:.1, timed:true },
+             ],
+           }, {
+             t:4,
+             duration:2,
+             sourceEnd:6,
+             text:'Next voice',
+             source:'apple-ttml-word',
+             nativeAppleKaraoke:true,
+             karaokeTimeline:[
+               { text:'Next ', start:4, duration:1, timed:true },
+               { text:'voice', start:5, duration:1, timed:true },
+             ],
+           }, {
+             t:7,
+             duration:1,
+             sourceEnd:8,
+             text:'After overlap',
+             source:'apple-ttml-word',
+             nativeAppleKaraoke:true,
+             karaokeTimeline:[
+               { text:'After ', start:7, duration:.5, timed:true },
+               { text:'overlap', start:7.5, duration:.5, timed:true },
+             ],
+           }];
+           window.testLyricTime = 1.2;
+           window.MineradioAppleMusicLyrics.refresh();
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => snapshot().some(line => line.text.includes('Lead holding')
+             && line.state === 'current'));
+           window.playing = false;
+           window.testLyricTime = 3.8;
+           window.MineradioAppleMusicLyrics.snap();
+           let overlapStablePositions = null;
+           let overlapStableSamples = 0;
+           await waitFor(() => {
+             const positions = snapshot()
+               .filter(line => line.text.includes('Lead holding') || line.text.includes('Next voice'))
+               .map(line => line.wrapperTop);
+             if (positions.length !== 2) return false;
+             if (overlapStablePositions
+               && positions.every((value, index) => Math.abs(value - overlapStablePositions[index]) < .2)) {
+               overlapStableSamples += 1;
+             } else {
+               overlapStableSamples = 0;
+             }
+             overlapStablePositions = positions;
+             return overlapStableSamples >= 3;
+           });
+           const appleOverlapBefore = snapshot();
+           window.testLyricTime = 4.2;
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => snapshot().filter(line => line.state === 'current').length === 2);
+           await wait(80);
+           const appleOverlapStarted = snapshot();
+           const startedSecondMaskTime = Math.max(...appleOverlapStarted
+             .find(line => line.text.includes('Next voice')).maskAnimationTimes);
+           window.playing = true;
+           await advanceTo(4.6);
+           await waitFor(() => {
+             const second = snapshot().find(line => line.text.includes('Next voice'));
+             return second && second.maskAnimationTimes.some(time => time > startedSecondMaskTime);
+           });
+           const appleOverlapRolling = snapshot();
+           window.playing = false;
+           window.testLyricTime = 5.2;
+           window.MineradioAppleMusicLyrics.snap();
+           await wait(80);
+           const appleOverlapFirstHeld = snapshot();
+           window.testLyricTime = 6.05;
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => snapshot().filter(line => line.state === 'past').length >= 2);
+           await wait(260);
+           const appleOverlapReleased = snapshot();
+           window.lyricsLines = [{
+             t:1,
+             duration:6,
+             sourceEnd:7,
+             text:'Long first voice',
+             source:'apple-ttml-word',
+             nativeAppleKaraoke:true,
+             karaokeTimeline:[
+               { text:'Long first ', start:1, duration:3, timed:true },
+               { text:'voice', start:4, duration:3, timed:true },
+             ],
+           }, {
+             t:4,
+             duration:1,
+             sourceEnd:5,
+             text:'Short second voice',
+             source:'apple-ttml-word',
+             nativeAppleKaraoke:true,
+             karaokeTimeline:[
+               { text:'Short second ', start:4, duration:.5, timed:true },
+               { text:'voice', start:4.5, duration:.5, timed:true },
+             ],
+           }, {
+             t:8,
+             duration:1,
+             sourceEnd:9,
+             text:'Reverse overlap next',
+             source:'apple-ttml-word',
+             nativeAppleKaraoke:true,
+             karaokeTimeline:[
+               { text:'Reverse overlap ', start:8, duration:.5, timed:true },
+               { text:'next', start:8.5, duration:.5, timed:true },
+             ],
+           }];
+           window.testLyricTime = 4.6;
+           window.MineradioAppleMusicLyrics.refresh();
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => snapshot().filter(line => line.state === 'current').length === 2);
+           await wait(80);
+           const appleReverseOverlapRolling = snapshot();
+           window.testLyricTime = 5.05;
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => snapshot().filter(line => line.state === 'past').length >= 2);
+           await wait(160);
+           const appleReverseOverlapReleased = snapshot();
+           window.testLyricTime = 4.6;
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => snapshot().filter(line => line.state === 'current').length === 2);
+           await wait(80);
+           const appleReverseOverlapSeekBack = snapshot();
+           window.lyricsLines = [{
+             t:1,
+             duration:4,
+             sourceEnd:5,
+             text:'Chain first',
+             source:'apple-ttml-word',
+             nativeAppleKaraoke:true,
+             karaokeTimeline:[
+               { text:'Chain ', start:1, duration:2, timed:true },
+               { text:'first', start:3, duration:2, timed:true },
+             ],
+           }, {
+             t:3,
+             duration:3,
+             sourceEnd:6,
+             text:'Chain second',
+             source:'apple-ttml-word',
+             nativeAppleKaraoke:true,
+             karaokeTimeline:[
+               { text:'Chain ', start:3, duration:1.5, timed:true },
+               { text:'second', start:4.5, duration:1.5, timed:true },
+             ],
+           }, {
+             t:4,
+             duration:3,
+             sourceEnd:7,
+             text:'Chain third',
+             source:'apple-ttml-word',
+             nativeAppleKaraoke:true,
+             karaokeTimeline:[
+               { text:'Chain ', start:4, duration:1.5, timed:true },
+               { text:'third', start:5.5, duration:1.5, timed:true },
+             ],
+           }, {
+             t:8,
+             duration:1,
+             sourceEnd:9,
+             text:'After chain',
+             source:'apple-ttml-word',
+             nativeAppleKaraoke:true,
+             karaokeTimeline:[
+               { text:'After ', start:8, duration:.5, timed:true },
+               { text:'chain', start:8.5, duration:.5, timed:true },
+             ],
+           }];
+           window.testLyricTime = 4.5;
+           window.MineradioAppleMusicLyrics.refresh();
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => snapshot().filter(line => line.state === 'current').length === 3);
+           await wait(80);
+           const appleChainedOverlapRolling = snapshot();
+           window.testLyricTime = 6.5;
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => snapshot().filter(line => line.state === 'current').length === 3);
+           await wait(80);
+           const appleChainedOverlapHeld = snapshot();
+           window.testLyricTime = 7.05;
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => snapshot().filter(line => line.state === 'past').length >= 3);
+           await wait(160);
+           const appleChainedOverlapReleased = snapshot();
+           const makeVirtualOverlapLine = index => {
+             const start = 1 + index * 3;
+             if (index === 14) return {
+               t:start,
+               duration:4,
+               sourceEnd:start + 4,
+               text:'Virtual overlap first',
+               source:'apple-ttml-word',
+               nativeAppleKaraoke:true,
+               karaokeTimeline:[
+                 { text:'Virtual overlap ', start, duration:2, timed:true },
+                 { text:'first', start:start + 2, duration:2, timed:true },
+               ],
+             };
+             if (index === 15) return {
+               t:start,
+               duration:3,
+               sourceEnd:start + 3,
+               text:'Virtual overlap second',
+               source:'apple-ttml-word',
+               nativeAppleKaraoke:true,
+               karaokeTimeline:[
+                 { text:'Virtual overlap ', start, duration:1.5, timed:true },
+                 { text:'second', start:start + 1.5, duration:1.5, timed:true },
+               ],
+             };
+             if (index === 17) return {
+               t:start,
+               duration:3.099,
+               sourceEnd:start + 3.099,
+               text:'Virtual micro outgoing',
+               source:'apple-ttml-word',
+               nativeAppleKaraoke:true,
+               karaokeTimeline:[
+                 { text:'Virtual micro ', start, duration:2, timed:true },
+                 { text:'outgoing', start:start + 2, duration:1.099, timed:true },
+               ],
+             };
+             if (index === 18) return {
+               t:start,
+               duration:2,
+               sourceEnd:start + 2,
+               text:'Virtual micro incoming',
+               source:'apple-ttml-word',
+               nativeAppleKaraoke:true,
+               karaokeTimeline:[
+                 { text:'Virtual micro ', start, duration:1, timed:true },
+                 { text:'incoming', start:start + 1, duration:1, timed:true },
+               ],
+             };
+             return {
+               t:start,
+               duration:2,
+               sourceEnd:start + 2,
+               text:'Virtual filler ' + (index + 1),
+               source:'apple-ttml-line',
+             };
+           };
+           document.documentElement.style.width = '640px';
+           document.documentElement.style.height = '420px';
+           document.body.style.width = '640px';
+           document.body.style.height = '420px';
+           window.lyricsLines = Array.from({ length:20 }, (_, index) => makeVirtualOverlapLine(index));
+           window.testLyricTime = 1.2;
+           window.MineradioAppleMusicLyrics.refresh();
+           window.MineradioAppleMusicLyrics.snap();
+           window.dispatchEvent(new Event('resize'));
+           await waitFor(() => document.querySelectorAll('.FmKaba_lyricLineWrapper').length < 20);
+           window.testLyricTime = 46.5;
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => snapshot().filter(line => line.text.includes('Virtual overlap')
+             && line.state === 'current').length === 2);
+           await wait(120);
+           const appleVirtualOverlapFirstMount = snapshot();
+           window.testLyricTime = 1.2;
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => !snapshot().some(line => line.text.includes('Virtual overlap')));
+           window.testLyricTime = 46.5;
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => snapshot().filter(line => line.text.includes('Virtual overlap')
+             && line.state === 'current').length === 2);
+           await wait(120);
+           const appleVirtualOverlapRemount = snapshot();
+           window.testLyricTime = 54.57;
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => snapshot().some(line => line.text.includes('Virtual micro incoming')
+             && line.state === 'current'));
+           await wait(80);
+           const appleVirtualMicroFirstMount = snapshot();
+           window.testLyricTime = 1.2;
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => !snapshot().some(line => line.text.includes('Virtual micro')));
+           window.testLyricTime = 54.57;
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => snapshot().some(line => line.text.includes('Virtual micro incoming')
+             && line.state === 'current'));
+           await wait(80);
+           const appleVirtualMicroRemount = snapshot();
+           document.documentElement.style.width = '1280px';
+           document.documentElement.style.height = '720px';
+           document.body.style.width = '1280px';
+           document.body.style.height = '720px';
+           window.dispatchEvent(new Event('resize'));
+           window.playing = false;
+           window.lyricsLines = [
+             [1, 10, 'Cap first'],
+             [2, 9, 'Cap second'],
+             [3, 8, 'Cap third'],
+             [4, 7, 'Cap fourth'],
+             [5, 8, 'Cap fifth'],
+             [6, 9, 'Cap sixth'],
+             [10, 11, 'After cap'],
+           ].map(([t, sourceEnd, text]) => ({
+             t,
+             duration:sourceEnd - t,
+             sourceEnd,
+             text,
+             source:'apple-ttml-word',
+             nativeAppleKaraoke:true,
+             karaokeTimeline:[
+               { text:text + ' opening ', start:t, duration:(sourceEnd - t) / 2, timed:true },
+               { text:'ending', start:t + (sourceEnd - t) / 2,
+                 duration:(sourceEnd - t) / 2, timed:true },
+             ],
+           }));
+           window.testLyricTime = 3.5;
+           window.MineradioAppleMusicLyrics.refresh();
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => snapshot().filter(line => line.state === 'current').length === 3);
+           await wait(80);
+           const appleOverlapCapBeforeFourth = snapshot();
+           window.testLyricTime = 4.05;
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => snapshot().filter(line => line.state === 'current').length === 1
+             && snapshot().some(line => line.text.includes('Cap fourth')
+               && line.state === 'current'));
+           await wait(180);
+           const appleOverlapCapAtFourth = snapshot();
+           window.testLyricTime = 6.5;
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => snapshot().filter(line => line.state === 'current').length === 3);
+           await wait(80);
+           const appleOverlapCapSecondGroup = snapshot();
+
+           window.lyricsLines = [{
+             t:1,
+             duration:4.099,
+             sourceEnd:5.099,
+             text:'Micro almost done',
+             source:'apple-ttml-word',
+             nativeAppleKaraoke:true,
+             karaokeTimeline:[
+               { text:'Micro almost ', start:1, duration:3, timed:true },
+               { text:'done', start:4, duration:1.099, timed:true },
+             ],
+           }, {
+             t:5,
+             duration:1,
+             sourceEnd:6,
+             text:'Micro next line',
+             source:'apple-ttml-word',
+             nativeAppleKaraoke:true,
+             karaokeTimeline:[
+               { text:'Micro next ', start:5, duration:.5, timed:true },
+               { text:'line', start:5.5, duration:.5, timed:true },
+             ],
+           }, {
+             t:7,
+             duration:1,
+             sourceEnd:8,
+             text:'After micro',
+             source:'apple-ttml-line',
+           }];
+           window.testLyricTime = 4.03;
+           window.MineradioAppleMusicLyrics.refresh();
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => snapshot().some(line => line.text.includes('Micro almost done')
+             && line.state === 'current'));
+           await wait(80);
+           const appleMicroOverlapBefore = snapshot();
+           const microBeforeMask = Math.max(...appleMicroOverlapBefore
+             .find(line => line.text.includes('Micro almost done')).maskAnimationTimes);
+           window.playing = true;
+           await advanceTo(4.12);
+           await waitFor(() => {
+             const outgoing = snapshot().find(line => line.text.includes('Micro almost done'));
+             return outgoing && outgoing.maskAnimationTimes.some(time => time > microBeforeMask);
+           });
+           const appleMicroOverlapAccelerating = snapshot();
+           window.playing = false;
+           window.testLyricTime = 4.21;
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => {
+             const lines = snapshot();
+             const outgoing = lines.find(line => line.text.includes('Micro almost done'));
+             const incoming = lines.find(line => line.text.includes('Micro next line'));
+             return outgoing && outgoing.state === 'past'
+               && outgoing.maskAnimationTimes.some(time => time >= 4090)
+               && incoming && incoming.state === 'current';
+           });
+           const appleMicroOverlapHandoff = snapshot();
+           window.playing = true;
+           await advanceTo(5.05);
+           await waitFor(() => snapshot().find(line => line.text.includes('Micro next line'))
+             .maskAnimationTimes.some(time => time > 0));
+           const appleMicroOverlapStarted = snapshot();
+           window.playing = false;
+           window.testLyricTime = 4.12;
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => snapshot().some(line => line.text.includes('Micro almost done')
+             && line.state === 'current'));
+           await wait(80);
+           const appleMicroOverlapSeekBack = snapshot();
+
+           window.lyricsLines = [{
+             t:1,
+             duration:5,
+             sourceEnd:6,
+             text:'Micro cluster first',
+             source:'apple-ttml-word',
+             nativeAppleKaraoke:true,
+             karaokeTimeline:[
+               { text:'Micro cluster ', start:1, duration:2.5, timed:true },
+               { text:'first', start:3.5, duration:2.5, timed:true },
+             ],
+           }, {
+             t:3,
+             duration:2.099,
+             sourceEnd:5.099,
+             text:'Micro cluster tail',
+             source:'apple-ttml-word',
+             nativeAppleKaraoke:true,
+             karaokeTimeline:[
+               { text:'Micro cluster ', start:3, duration:1.099, timed:true },
+               { text:'tail', start:4.099, duration:1, timed:true },
+             ],
+           }, {
+             t:5,
+             duration:1,
+             sourceEnd:6,
+             text:'Micro cluster incoming',
+             source:'apple-ttml-word',
+             nativeAppleKaraoke:true,
+             karaokeTimeline:[
+               { text:'Micro cluster ', start:5, duration:.5, timed:true },
+               { text:'incoming', start:5.5, duration:.5, timed:true },
+             ],
+           }];
+           window.testLyricTime = 4.57;
+           window.MineradioAppleMusicLyrics.refresh();
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => snapshot().some(line => line.text.includes('Micro cluster incoming')
+             && line.state === 'current'));
+           await wait(120);
+           const appleMicroOverlapClusterTail = snapshot();
+           window.playing = true;
+           window.lyricsLines = [{
+             t:1,
+             duration:2,
+             sourceEnd:3,
+             text:'Natural finish',
+             source:'apple-ttml-word',
+             nativeAppleKaraoke:true,
+             karaokeTimeline:[
+               { text:'Natural ', start:1, duration:1, timed:true },
+               { text:'finish', start:2, duration:1, timed:true },
+             ],
+           }, {
+             t:4,
+             duration:1,
+             sourceEnd:5,
+             text:'Word handoff',
+             source:'apple-ttml-word',
+             nativeAppleKaraoke:true,
+             karaokeTimeline:[
+               { text:'Word ', start:4, duration:.5, timed:true },
+               { text:'handoff', start:4.5, duration:.5, timed:true },
+             ],
+           }];
+           window.testLyricTime = 3.1;
+           window.MineradioAppleMusicLyrics.refresh();
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => snapshot().some(line => line.text.includes('Natural finish')
+             && line.state === 'current'));
+           await wait(80);
+           const appleGapHolding = snapshot();
+           await advanceTo(3.21);
+           await waitFor(() => snapshot().some(line => line.text.includes('Word handoff')
+             && line.state === 'current'));
+           window.playing = false;
+           await wait(48);
+           window.MineradioAppleMusicLyrics.snap();
+           await wait(48);
+           const appleGapEarly = snapshot();
+           window.playing = true;
+           await wait(32);
+           await advanceTo(4.1);
+           await wait(80);
+           const appleGapStarted = snapshot();
+
+           window.lyricsTimingSource = 'apple-ttml-line';
+           window.lyricsLines = [{
+             t:1,
+             duration:2,
+             sourceEnd:3,
+             text:'Line finish',
+             source:'apple-ttml-line',
+           }, {
+             t:4.1,
+             duration:1,
+             sourceEnd:5.1,
+             text:'Line handoff',
+             source:'apple-ttml-line',
+           }];
+           window.testLyricTime = 3.31;
+           window.MineradioAppleMusicLyrics.refresh();
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => snapshot().some(line => line.text.includes('Line handoff')
+             && line.state === 'current'));
+           await wait(80);
+           const appleLineEarly = snapshot();
+           const wordAdvanceControl = document.querySelector('[data-amll-setting="wordAdvanceEnabled"]');
+           wordAdvanceControl.checked = false;
+           wordAdvanceControl.dispatchEvent(new Event('change', { bubbles:true }));
+           await waitFor(() => window.MineradioAppleMusicLyrics.getSettings().wordAdvanceEnabled === false);
+           window.testLyricTime = 3.31;
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => snapshot().some(line => line.text.includes('Line finish')
+             && line.state === 'current'));
+           await wait(80);
+           const appleLineDisabled = snapshot();
+
+           wordAdvanceControl.checked = true;
+           wordAdvanceControl.dispatchEvent(new Event('change', { bubbles:true }));
+           await waitFor(() => window.MineradioAppleMusicLyrics.getSettings().wordAdvanceEnabled === true);
+           window.lyricsTimingSource = 'apple-ttml-word';
+           const appleKoreanLexicalLines = [{
+             t:1,
+             duration:2,
+             sourceEnd:3,
+             text:'세상의 장면 중',
+             transText:'世界万象中',
+             source:'apple-ttml-word',
+             nativeAppleKaraoke:true,
+             romanLanguage:'ko',
+             romanTokens:[
+               { sourceText:'세상의', romanized:'se sang ui', c0:0, c1:3, sourceNodeIndexes:[0] },
+               { sourceText:'장면', romanized:'jang myeon', c0:4, c1:6, sourceNodeIndexes:[1, 2] },
+               { sourceText:'중', romanized:'jung', c0:7, c1:8, sourceNodeIndexes:[3] },
+             ],
+             karaokeTimeline:[
+               { text:'세상의 ', c0:0, c1:4, start:1, duration:.6, timed:true },
+               { text:'장', c0:4, c1:5, start:1.6, duration:.35, timed:true },
+               { text:'면 ', c0:5, c1:7, start:1.95, duration:.45, timed:true },
+               { text:'중', c0:7, c1:8, start:2.4, duration:.6, timed:true },
+             ],
+           }, {
+             t:4,
+             duration:2,
+             sourceEnd:6,
+             text:'네게만 반응해',
+             transText:'只对你有反应',
+             source:'apple-ttml-word',
+             nativeAppleKaraoke:true,
+             romanLanguage:'ko',
+             romanTokens:[
+               { sourceText:'네게만', romanized:'ne ge man', c0:0, c1:3, sourceNodeIndexes:[0] },
+               { sourceText:'반응해', romanized:'ba neung hae', c0:4, c1:7, sourceNodeIndexes:[1, 2] },
+             ],
+             karaokeTimeline:[
+               { text:'네게만 ', c0:0, c1:4, start:4, duration:.7, timed:true },
+               { text:'반', c0:4, c1:5, start:4.7, duration:.3, timed:true },
+               { text:'응해', c0:5, c1:7, start:5, duration:.8, timed:true },
+             ],
+           }];
+           document.documentElement.style.width = '1280px';
+           document.documentElement.style.height = '720px';
+           document.body.style.width = '1280px';
+           document.body.style.height = '720px';
+           window.lyricsLines = appleKoreanLexicalLines;
+           window.playing = false;
+           window.testLyricTime = 1.8;
+           window.MineradioAppleMusicLyrics.refresh();
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => snapshot().some(line => line.appleKoreanLexicalWords
+             .some(word => word.sourceText === '장면')));
+           await wait(120);
+           const appleKoreanLexicalFirst = snapshot();
+           window.testLyricTime = 2.1;
+           window.MineradioAppleMusicLyrics.snap();
+           await wait(48);
+           const appleKoreanLexicalSecondSyllable = snapshot();
+           window.testLyricTime = 5.2;
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => snapshot().some(line => line.appleKoreanLexicalWords
+             .some(word => word.sourceText === '반응해')));
+           await wait(48);
+           const appleKoreanLexicalSecond = snapshot();
+           window.playing = true;
+
+           window.lyricsLines = appleKoreanLexicalLines.map(line => ({
+             ...line,
+             romanTokens:line.romanTokens.map(token => ({ ...token })),
+             karaokeTimeline:line.karaokeTimeline.map(node => ({ ...node })),
+           }));
+           window.testLyricTime = 1.8;
+           window.MineradioAppleMusicLyrics.refresh();
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => snapshot().some(line => line.appleKoreanLexicalWords
+             .some(word => word.sourceText === '장면')));
+           await wait(120);
+           const appleKoreanLexicalRebuilt = snapshot();
+
+           document.documentElement.style.width = '360px';
+           document.documentElement.style.height = '420px';
+           document.body.style.width = '360px';
+           document.body.style.height = '420px';
+           const makeAppleVirtualLine = index => {
+             const start = 1 + index * 3;
+             if (index !== 14) return {
+               t:start,
+               duration:2,
+               sourceEnd:start + 2,
+               text:'Apple filler line-' + (index + 1),
+               source:'apple-ttml-line',
+             };
+             return {
+               ...appleKoreanLexicalLines[0],
+               t:start,
+               sourceEnd:start + 2,
+               duration:2,
+               karaokeTimeline:appleKoreanLexicalLines[0].karaokeTimeline.map(node => ({
+                 ...node,
+                 start:start + node.start - 1,
+               })),
+             };
+           };
+           window.lyricsLines = Array.from({ length:20 }, (_, index) => makeAppleVirtualLine(index));
+           window.testLyricTime = 1.2;
+           window.MineradioAppleMusicLyrics.refresh();
+           window.MineradioAppleMusicLyrics.snap();
+           window.dispatchEvent(new Event('resize'));
+           await waitFor(() => document.querySelectorAll('.FmKaba_lyricLineWrapper').length < 20);
+           const lexicalVirtualStage = document.getElementById('apple-music-lyrics-beta-stage');
+           lexicalVirtualStage.style.height = '6000px';
+           lexicalVirtualStage.style.bottom = 'auto';
+           window.dispatchEvent(new Event('resize'));
+           await waitFor(() => snapshot().some(line => line.appleKoreanLexicalWords
+             .some(word => word.sourceText === '장면')));
+           await wait(160);
+           const appleKoreanLexicalVirtualized = snapshot();
+           lexicalVirtualStage.style.height = '';
+           lexicalVirtualStage.style.bottom = '';
+           document.documentElement.style.width = '1280px';
+           document.documentElement.style.height = '720px';
+           document.body.style.width = '1280px';
+           document.body.style.height = '720px';
+           window.dispatchEvent(new Event('resize'));
+           window.lyricsLines = [{
+             t:1,
+             duration:2.5,
+             sourceEnd:3.5,
+             text:'Foreground vocal',
+             source:'apple-ttml-line',
+           }, {
+             ...appleKoreanLexicalLines[0],
+             t:1.2,
+             sourceEnd:3.2,
+             isBG:true,
+             isBackground:true,
+             karaokeTimeline:appleKoreanLexicalLines[0].karaokeTimeline.map(node => ({
+               ...node,
+               start:node.start + .2,
+             })),
+           }];
+           window.testLyricTime = 2;
+           window.MineradioAppleMusicLyrics.refresh();
+           window.MineradioAppleMusicLyrics.snap();
+           await waitFor(() => snapshot().some(line => line.appleKoreanLexicalWords
+             .some(word => word.sourceText === '장면' && word.isBackground && word.lexicalTiming)));
+           await wait(120);
+           const appleKoreanLexicalBackground = snapshot();
+           const appleKoreanAlignmentLines = [{
+             t:1,
+             duration:2.5,
+             sourceEnd:3.5,
+             text:'들려줄게 네게',
+             transText:'我会说给你听',
+             source:'apple-ttml-word',
+             nativeAppleKaraoke:true,
+             romanLanguage:'ko',
+             romanTokens:[
+               { sourceText:'들려줄게', romanized:'deul ryeo jul ge', c0:0, c1:4, sourceNodeIndexes:[0] },
+               { sourceText:'네게', romanized:'ne ge', c0:5, c1:7, sourceNodeIndexes:[1, 2] },
+             ],
+             karaokeTimeline:[
+               { text:'들려줄게 ', c0:0, c1:5, start:1, duration:1.4, timed:true },
+               { text:'네', c0:5, c1:6, start:2.4, duration:.3, timed:true },
+               { text:'게', c0:6, c1:7, start:2.7, duration:.8, timed:true },
+             ],
+           }, {
+             t:5,
+             duration:3.1,
+             sourceEnd:8.1,
+             text:'해독하고 싶어 Baby',
+             transText:'想读懂你 宝贝',
+             source:'apple-ttml-word',
+             nativeAppleKaraoke:true,
+             romanLanguage:'ko',
+             romanTokens:[
+               { sourceText:'해독하고', romanized:'hae dok ha go', c0:0, c1:4, sourceNodeIndexes:[0] },
+               { sourceText:'싶어', romanized:'si peo', c0:5, c1:7, sourceNodeIndexes:[1, 2] },
+               { sourceText:'Baby', romanized:'Baby', c0:8, c1:12, sourceNodeIndexes:[3] },
+             ],
+             karaokeTimeline:[
+               { text:'해독하고 ', c0:0, c1:5, start:5, duration:1.3, timed:true },
+               { text:'싶', c0:5, c1:6, start:6.3, duration:.3, timed:true },
+               { text:'어 ', c0:6, c1:8, start:6.6, duration:.5, timed:true },
+               { text:'Baby', c0:8, c1:12, start:7.1, duration:1, timed:true },
+             ],
+           }, {
+             t:9,
+             duration:3,
+             sourceEnd:12,
+             text:'생각해 종일 너만',
+             transText:'整天都只想着你',
+             source:'apple-ttml-word',
+             nativeAppleKaraoke:true,
+             romanLanguage:'ko',
+             romanTokens:[
+               { sourceText:'생각해', romanized:'saeng gak hae', c0:0, c1:3, sourceNodeIndexes:[0] },
+               { sourceText:'종일', romanized:'jong il', c0:4, c1:6, sourceNodeIndexes:[1, 2] },
+               { sourceText:'너만', romanized:'neo man', c0:7, c1:9, sourceNodeIndexes:[3] },
+             ],
+             karaokeTimeline:[
+               { text:'생각해 ', c0:0, c1:4, start:9, duration:1.3, timed:true },
+               { text:'종', c0:4, c1:5, start:10.3, duration:.3, timed:true },
+               { text:'일 ', c0:5, c1:7, start:10.6, duration:.5, timed:true },
+               { text:'너만', c0:7, c1:9, start:11.1, duration:.9, timed:true },
+             ],
+           }];
+           document.documentElement.style.width = '578px';
+           document.documentElement.style.height = '720px';
+           document.body.style.width = '578px';
+           document.body.style.height = '720px';
+           window.lyricsLines = appleKoreanAlignmentLines;
+           window.testLyricTime = 1.6;
+           window.MineradioAppleMusicLyrics.refresh();
+           window.MineradioAppleMusicLyrics.snap();
+           window.dispatchEvent(new Event('resize'));
+           await waitFor(() => snapshot().some(line => line.appleKoreanWordColumns
+             .some(word => word.sourceText === '들려줄게')));
+           await wait(160);
+           const appleKoreanAlignmentFirst = snapshot();
+           await advanceTo(5.8);
+           await waitFor(() => snapshot().some(line => line.appleKoreanWordColumns
+             .some(word => word.sourceText === '해독하고')));
+           await wait(120);
+           const appleKoreanAlignmentSecond = snapshot();
+           await advanceTo(9.8);
+           await waitFor(() => snapshot().some(line => line.appleKoreanWordColumns
+             .some(word => word.sourceText === '생각해')));
+           await wait(120);
+           const appleKoreanAlignmentThird = snapshot();
+
+           romanizationScaleControl.value = '0.68';
+           romanizationScaleControl.dispatchEvent(new Event('input', { bubbles:true }));
+           await waitFor(() => window.MineradioAppleMusicLyrics.getSettings().romanizationScale === 0.68);
+           await wait(720);
+           const appleKoreanAlignmentRescaled = snapshot();
+           romanizationScaleControl.value = '0.5';
+           romanizationScaleControl.dispatchEvent(new Event('input', { bubbles:true }));
+           await waitFor(() => window.MineradioAppleMusicLyrics.getSettings().romanizationScale === 0.5);
+           await wait(520);
+
+           document.documentElement.style.width = '360px';
+           document.body.style.width = '360px';
+           window.dispatchEvent(new Event('resize'));
+           await wait(180);
+           const appleKoreanAlignmentNarrow = snapshot();
+
+           const lifecycleDragTarget = document.createElement('button');
+           lifecycleDragTarget.id = 'amll-disable-drag-target';
+           lifecycleDragTarget.type = 'button';
+           lifecycleDragTarget.style.cssText = 'position:fixed;inset:0;z-index:4;pointer-events:auto;';
+           let lifecycleDragReceived = false;
+           lifecycleDragTarget.addEventListener('pointerdown', function(){ lifecycleDragReceived = true; });
+           document.body.appendChild(lifecycleDragTarget);
+           const lifecycleLyrics = window.lyricsLines;
+           let lifecycleReloadCalls = 0;
+           window.reloadCurrentLyricForSourcePolicy = function(){
+             lifecycleReloadCalls += 1;
+             window.lyricsLines = [];
+             window.lyricTrackLoading = true;
+             return new Promise(function(){});
+           };
+           const lifecycleEnabledControl = document.querySelector('[data-amll-setting="enabled"]');
+           lifecycleEnabledControl.checked = false;
+           lifecycleEnabledControl.dispatchEvent(new Event('change', { bubbles:true }));
+           await wait(16);
+           const lifecyclePlayerPrototype = window.MineradioAMLLCore.LyricPlayer.prototype;
+           const lifecycleOriginalOptimizeOptions = lifecyclePlayerPrototype.setOptimizeOptions;
+           let lifecycleFailedPlayerAttempts = 0;
+           lifecyclePlayerPrototype.setOptimizeOptions = function(){
+             lifecycleFailedPlayerAttempts += 1;
+             throw new Error('forced AMLL configure failure');
+           };
+           lifecycleEnabledControl.checked = true;
+           lifecycleEnabledControl.dispatchEvent(new Event('change', { bubbles:true }));
+           await wait(80);
+           lifecycleEnabledControl.checked = false;
+           lifecycleEnabledControl.dispatchEvent(new Event('change', { bubbles:true }));
+           lifecyclePlayerPrototype.setOptimizeOptions = lifecycleOriginalOptimizeOptions;
+           await wait(48);
+           const failedRendererLifecycle = {
+             attempts:lifecycleFailedPlayerAttempts,
+             playerCount:document.querySelectorAll('.mineradio-amll-player').length,
+             surfaceChildren:document.getElementById('apple-music-lyrics-beta-surface').children.length,
+           };
+           const lifecycleHitTarget = document.elementFromPoint(180, 160);
+           if (lifecycleHitTarget) lifecycleHitTarget.dispatchEvent(new PointerEvent('pointerdown', { bubbles:true }));
+           const lifecycleStage = document.getElementById('apple-music-lyrics-beta-stage');
+           const lifecycleSurface = document.getElementById('apple-music-lyrics-beta-surface');
+           const lifecyclePlayer = document.querySelector('.mineradio-amll-player');
+           const disabledLifecycle = {
+             settingsEnabled:window.MineradioAppleMusicLyrics.getSettings().enabled,
+             bodyActive:document.body.classList.contains('apple-music-lyrics-beta-active'),
+             stageActive:lifecycleStage.classList.contains('active'),
+             stageAriaHidden:lifecycleStage.getAttribute('aria-hidden'),
+             stageInert:lifecycleStage.inert === true,
+             surfacePointerEvents:getComputedStyle(lifecycleSurface).pointerEvents,
+             regularLyricsVisible:window.stageLyrics.group.visible,
+             lyricsPreserved:window.lyricsLines === lifecycleLyrics && window.lyricsLines.length > 0,
+             reloadCalls:lifecycleReloadCalls,
+             playerCount:document.querySelectorAll('.mineradio-amll-player').length,
+             playerAnimationCount:lifecyclePlayer
+               ? lifecyclePlayer.getAnimations({ subtree:true }).filter(function(animation){
+                   return animation.playState === 'running' || animation.playState === 'paused';
+                 }).length
+               : 0,
+             hitTarget:lifecycleHitTarget && lifecycleHitTarget.id,
+             dragReceived:lifecycleDragReceived,
+           };
+
+           for (let lifecycleCycle = 0; lifecycleCycle < 10; lifecycleCycle += 1) {
+             lifecycleEnabledControl.checked = true;
+             lifecycleEnabledControl.dispatchEvent(new Event('change', { bubbles:true }));
+             await waitFor(() => document.querySelectorAll('.mineradio-amll-player').length === 1);
+             lifecycleEnabledControl.checked = false;
+             lifecycleEnabledControl.dispatchEvent(new Event('change', { bubbles:true }));
+             await wait(16);
+           }
+           const repeatedToggleLifecycle = {
+             reloadCalls:lifecycleReloadCalls,
+             playerCount:document.querySelectorAll('.mineradio-amll-player').length,
+             regularLyricsVisible:window.stageLyrics.group.visible,
+             surfacePointerEvents:getComputedStyle(lifecycleSurface).pointerEvents,
+           };
+           lifecycleDragTarget.remove();
+           result.textContent = JSON.stringify({
+             before, rolling, later, lrc, lrcRescaled, lrcResized, savedSettings,
+             reloadSettings, resetState, removedOpacitySettings,
+              virtualizedFifth, virtualizedSixth, virtualizedSeventh, virtualizedSeekBack,
+              virtualizedRemount,
+              appleBackgroundBeforeStart, appleBackgroundStarted,
+              appleBackgroundPaused, appleBackgroundPausedHeld,
+              appleBackgroundResumed, appleBackgroundSeekBack, appleBackgroundFinished,
+              qrcBackgroundBeforeStart, qrcBackgroundStarted,
+              appleOverlapBefore, appleOverlapStarted, appleOverlapRolling,
+             appleOverlapFirstHeld, appleOverlapReleased,
+             appleReverseOverlapRolling, appleReverseOverlapReleased,
+             appleReverseOverlapSeekBack,
+             appleChainedOverlapRolling, appleChainedOverlapHeld,
+             appleChainedOverlapReleased,
+             appleVirtualOverlapFirstMount, appleVirtualOverlapRemount,
+             appleVirtualMicroFirstMount, appleVirtualMicroRemount,
+             appleOverlapCapBeforeFourth, appleOverlapCapAtFourth,
+             appleOverlapCapSecondGroup,
+             appleMicroOverlapBefore, appleMicroOverlapAccelerating,
+             appleMicroOverlapHandoff, appleMicroOverlapStarted,
+             appleMicroOverlapSeekBack, appleMicroOverlapClusterTail,
+             appleGapHolding, appleGapEarly, appleGapStarted,
+             appleLineEarly, appleLineDisabled,
+             appleKoreanLexicalFirst, appleKoreanLexicalSecondSyllable,
+             appleKoreanLexicalSecond,
+             appleKoreanLexicalRebuilt, appleKoreanLexicalVirtualized,
+             appleKoreanLexicalBackground,
+             appleKoreanAlignmentFirst, appleKoreanAlignmentSecond,
+             appleKoreanAlignmentThird, appleKoreanAlignmentRescaled,
+             appleKoreanAlignmentNarrow,
+             failedRendererLifecycle, disabledLifecycle, repeatedToggleLifecycle,
+           });
+          result.dataset.done = 'true';
+        } catch (error) {
+          result.textContent = String(error && error.stack || error);
+          result.dataset.done = 'error';
+        }
+      })();
+    }
+  </script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 # Desktop Lyrics Visual Baseline
 
-Last saved: 2026-06-22
+Last saved: 2026-07-22
 
 ## Approved Effect
 
@@ -18,6 +18,7 @@ Last saved: 2026-06-22
 - Unlock/lock is handled by the main process middle-mouse poller using `GetAsyncKeyState(4)` and the lyric hot bounds. This lets middle-click work even when the overlay is click-through.
 - Renderer hover logic must not call pointer capture while locked. Locked hover may show the delayed hint, but it must keep `setPointerCapture(false)`.
 - Unlocked state may capture pointer for dragging and the close button only.
+- A track switch uses an explicit loading state. The desktop lyric text and its text glow must become completely blank immediately, then the newly parsed lyric may fade in; never retain the previous track or replace it with a title/loading placeholder.
 
 ## Do Not Regress
 

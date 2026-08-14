@@ -1,9 +1,9 @@
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const vm = require('node:vm');
+const { readRendererSource } = require('./renderer-source');
+const lyricCreditFilter = require('../public/js/lyric-credit-filter');
 
-const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+const html = readRendererSource();
 
 function functionSource(marker) {
   const start = html.indexOf(marker);
@@ -248,21 +248,33 @@ function verifyPayloadResolutionUsesOnlyQqQrcForKaraoke() {
     'function parseQrcText(text)',
     'function isNoLyricText(text)',
     'function isLeadingLyricCreditText(text)',
+    'function normalizeLyricMetadataIdentityText(text)',
+    'function isCurrentSongIdentityLyricText(text, song)',
+    'function lyricProviderDropsOpeningLine(provider)',
     'function stripLeadingLyricCredits(lines)',
     'function resolveLyricPayload(payload)',
-  ]);
+  ], { MineradioLyricCreditFilter:lyricCreditFilter });
   const qqQrc = context.resolveLyricPayload({
     provider: 'qq',
-    qrc: '[0,2000]A(0,1000)B(1000,1000)',
-    lyric: '[00:00]QQ line',
+    qrc: '[0,1000]QQ Title(0,1000)\n[2000,2000]A(2000,1000)B(3000,1000)',
+    lyric: '[00:00]QQ Title\n[00:02]QQ line',
   });
   assert.equal(qqQrc.timingSource, 'qrc-word');
   assert.equal(qqQrc.hasNativeKaraoke, true);
+  assert.equal(qqQrc.lines[0].nativeQqKaraoke, true, 'Only resolved QQ QRC lines should be eligible for native word movement');
+
+  const sanitizedCachedQrc = context.resolveLyricPayload({
+    provider:'qq',
+    lyricMetadataSanitizedVersion:1,
+    qrc:'[2000,2000]A(2000,1000)B(3000,1000)',
+  });
+  assert.equal(sanitizedCachedQrc.lines[0].text, 'AB',
+    'A cache that already removed its title must not lose the first real lyric a second time');
 
   const qqBrokenQrc = context.resolveLyricPayload({
     provider: 'qq',
-    qrc: '[0,2000]No usable word timing',
-    lyric: '[00:00]QQ fallback line',
+    qrc: '[0,1000]QQ Title(0,1000)\n[2000,2000]No usable word timing',
+    lyric: '[00:00]QQ Title\n[00:02]QQ fallback line',
   });
   assert.equal(qqBrokenQrc.timingSource, 'lrc-line', 'QQ LRC should replace a QRC payload with no timed nodes');
   assert.equal(qqBrokenQrc.lines[0].text, 'QQ fallback line');
@@ -270,7 +282,7 @@ function verifyPayloadResolutionUsesOnlyQqQrcForKaraoke() {
   const qqPlaceholderQrc = context.resolveLyricPayload({
     provider: 'qq',
     qrc: '[0,2000]暂无歌词(0,2000)',
-    lyric: '[00:00]QQ real LRC',
+    lyric: '[00:00]QQ Title\n[00:02]QQ real LRC',
   });
   assert.equal(qqPlaceholderQrc.timingSource, 'lrc-line', 'A timed QQ placeholder must not block the same QQ payload LRC');
   assert.equal(qqPlaceholderQrc.lines[0].text, 'QQ real LRC');
@@ -282,11 +294,25 @@ function verifyPayloadResolutionUsesOnlyQqQrcForKaraoke() {
   const netease = context.resolveLyricPayload({
     provider: 'netease',
     yrc: '[0,2000](0,1000,0)A(1000,1000,0)B',
-    lyric: '[00:00]NetEase line only',
+    lyric: '[00:00]网易云标题\n[00:02]NetEase line only',
   });
   assert.equal(netease.timingSource, 'lrc-line', 'NetEase YRC must be ignored permanently');
   assert.equal(netease.hasNativeKaraoke, false);
+  assert.equal(netease.lines[0].nativeQqKaraoke, undefined);
   assert.equal(netease.lines[0].text, 'NetEase line only');
+
+  const local = context.resolveLyricPayload({
+    provider: 'local',
+    lyric: '[00:00]Local first real lyric\n[00:02]Local second lyric',
+  });
+  assert.equal(local.lines[0].text, 'Local first real lyric',
+    'Non-QQ and non-NetEase sources must retain their first non-empty lyric line');
+  const unknown = context.resolveLyricPayload({
+    source:'apple-music-preview',
+    lyric:'[00:00]Unknown source first lyric\n[00:02]Unknown source second lyric',
+  });
+  assert.equal(unknown.lines[0].text, 'Unknown source first lyric',
+    'An undeclared or future lyric source must never be inferred as NetEase for first-line deletion');
 
   const yrcOnly = context.resolveLyricPayload({ provider: 'netease', yrc: '[0,1000](0,1000,0)A' });
   assert.equal(yrcOnly.timingSource, 'fallback', 'NetEase YRC alone is not a usable lyric result');
@@ -294,7 +320,13 @@ function verifyPayloadResolutionUsesOnlyQqQrcForKaraoke() {
 }
 
 function verifyLeadingCreditsAreRemovedWithoutTouchingLyrics() {
-  const context = evaluateFunctions(['function isLeadingLyricCreditText(text)', 'function stripLeadingLyricCredits(lines)']);
+  const context = evaluateFunctions([
+    'function isLeadingLyricCreditText(text)',
+    'function normalizeLyricMetadataIdentityText(text)',
+    'function isCurrentSongIdentityLyricText(text, song)',
+    'function lyricProviderDropsOpeningLine(provider)',
+    'function stripLeadingLyricCredits(lines)',
+  ], { MineradioLyricCreditFilter:lyricCreditFilter });
   const lines = [
     { t: 1, text: '作词：Alice' },
     { t: 3, text: '编曲 / Bob' },
@@ -305,6 +337,89 @@ function verifyLeadingCreditsAreRemovedWithoutTouchingLyrics() {
   assert.deepEqual(filtered.map((line) => line.text), ['第一句真实歌词', '作词的人也会唱歌'],
     'Only the leading metadata block should be removed');
   assert.equal(filtered[0].t, 10, 'The first real lyric timestamp must stay unchanged so the intro gap can be detected');
+
+  const english = [
+    { t: 1, text: 'Lyrics by Alice' },
+    { t: 2, text: 'Written by: Bob' },
+    { t: 3, text: 'Produced by Carol' },
+    { t: 4, text: 'Vocals by / Dave' },
+    { t: 12, text: 'This is the first lyric' },
+    { t: 20, text: 'Lyrics by moonlight' },
+  ];
+  const englishFiltered = JSON.parse(JSON.stringify(context.stripLeadingLyricCredits(english)));
+  assert.deepEqual(englishFiltered.map((line) => line.text), ['This is the first lyric', 'Lyrics by moonlight'],
+    'English credit prefixes followed directly by names should be removed only before the first lyric');
+
+  const song = { name:'Snooze', artist:'SZA' };
+  const titleArtist = [
+    { t:1, text:'Snooze - SZA' },
+    { t:2, text:'SNOOZE' },
+    { t:3, text:'s.z.a' },
+    { t:12, text:'I think I know' },
+    { t:20, text:'Snooze - SZA' },
+  ];
+  const identityFiltered = JSON.parse(JSON.stringify(context.stripLeadingLyricCredits(titleArtist, song)));
+  assert.deepEqual(identityFiltered.map((line) => line.text), ['I think I know', 'Snooze - SZA'],
+    'Current title/artist identity lines should be removed only from the leading metadata block');
+
+  const extendedCredits = [
+    { t:1, text:'【Lyricist：Alice】' },
+    { t:2, text:'Composer - Bob' },
+    { t:3, text:'Mixing & Mastering: Carol' },
+    { t:4, text:'Recording Engineer / Dave' },
+    { t:5, text:'制作统筹：小明' },
+    { t:6, text:'人声编辑 - 小红' },
+    { t:7, text:'吉他：Eve' },
+    { t:8, text:'歌曲名称：Snooze' },
+    { t:9, text:'作词张三' },
+    { t:9.2, text:'制作人李四' },
+    { t:9.4, text:'人声编辑王五' },
+    { t:9.6, text:'MixingEngineerCarol' },
+    { t:9.8, text:'MasteringDave' },
+    { t:10, text:'RecordingEngineerEve' },
+    { t:12, text:'This is the first lyric' },
+    { t:20, text:'Composer of my own fate' },
+  ];
+  const extendedFiltered = JSON.parse(JSON.stringify(context.stripLeadingLyricCredits(extendedCredits, song)));
+  assert.deepEqual(extendedFiltered.map((line) => line.text), ['This is the first lyric', 'Composer of my own fate'],
+    'Common multilingual production credits and wrapped labels should be removed only from the opening block');
+}
+
+function verifyProviderOpeningLineAndTranslationMetadataRules() {
+  const context = evaluateFunctions([
+    'function isLeadingLyricCreditText(text)',
+    'function normalizeLyricMetadataIdentityText(text)',
+    'function isCurrentSongIdentityLyricText(text, song)',
+    'function lyricProviderDropsOpeningLine(provider)',
+    'function stripLeadingLyricCredits(lines)',
+    'function isLeadingLyricTranslationMetadataText(text)',
+    'function stripLeadingLyricTranslationMetadata(lines)',
+  ], { MineradioLyricCreditFilter:lyricCreditFilter });
+  const sourceLines = [
+    { t:1, text:'한국어 제목' },
+    { t:2, text:'Lyrics by Alice' },
+    { t:10, text:'첫 번째 실제 가사' },
+  ];
+  const qq = JSON.parse(JSON.stringify(context.stripLeadingLyricCredits(sourceLines, null, 'qq')));
+  assert.deepEqual(qq.map((line) => line.text), ['첫 번째 실제 가사']);
+  assert.equal(qq[0].t, 10,
+    'Deleting the QQ title and credits must not shift the first real lyric timestamp');
+  const netease = JSON.parse(JSON.stringify(context.stripLeadingLyricCredits(sourceLines, null, 'netease')));
+  assert.deepEqual(netease.map((line) => line.text), ['첫 번째 실제 가사']);
+  const local = JSON.parse(JSON.stringify(context.stripLeadingLyricCredits(sourceLines, null, 'local')));
+  assert.deepEqual(local.map((line) => line.text), ['한국어 제목', 'Lyrics by Alice', '첫 번째 실제 가사'],
+    'The unconditional first-line rule must remain scoped to QQ and NetEase');
+
+  const translations = [
+    { t:1, text:'歌词翻译QQ音乐版权所有' },
+    { t:2, text:'翻译：QQ音乐' },
+    { t:10, text:'第一句翻译' },
+    { t:20, text:'QQ音乐是我青春的一部分' },
+  ];
+  const cleaned = JSON.parse(JSON.stringify(context.stripLeadingLyricTranslationMetadata(translations)));
+  assert.deepEqual(cleaned.map((line) => line.text), ['', '', '第一句翻译', 'QQ音乐是我青春的一部分']);
+  assert.deepEqual(cleaned.map((line) => line.t), [1, 2, 10, 20],
+    'Translation metadata cleanup must preserve every source timestamp');
 }
 
 function verifyBlankSegmentRules() {
@@ -374,11 +489,11 @@ function verifyBlankSegmentRules() {
   assert.equal(context.buildLyricBlankSegments(lrcLines, { timingSource: 'lrc-line', lrcText: '[00:00]A\n[00:10]间奏\n[00:20]B' }).length, 0, 'Text such as 间奏 must not be treated as a blank marker');
 
   const segment = { start: 10, end: 19, duration: 9, kind: 'between' };
-  assert.deepEqual(JSON.parse(JSON.stringify(context.getLyricBreathDotState(segment, 12.25).pulses)), [1, 0, 0]);
-  assert.deepEqual(JSON.parse(JSON.stringify(context.getLyricBreathDotState(segment, 14.5).pulses)), [1, 1, 0]);
-  assert.deepEqual(JSON.parse(JSON.stringify(context.getLyricBreathDotState(segment, 16.75).pulses)), [1, 1, 1]);
-  assert.deepEqual(JSON.parse(JSON.stringify(context.getLyricBreathDotState(segment, 18.5).pulses)), [1, 1, 1],
-    'The final quarter should hold all dots at their completed state');
+  assert.deepEqual(JSON.parse(JSON.stringify(context.getLyricBreathDotState(segment, 12.9).pulses)), [1, 0, 0]);
+  assert.deepEqual(JSON.parse(JSON.stringify(context.getLyricBreathDotState(segment, 15.8).pulses)), [1, 1, 0]);
+  assert.deepEqual(JSON.parse(JSON.stringify(context.getLyricBreathDotState(segment, 18.7).pulses)), [1, 1, 1]);
+  assert.deepEqual(JSON.parse(JSON.stringify(context.getLyricBreathDotState(segment, 18.85).pulses)), [1, 1, 1],
+    'All three breaths should use the gap and leave only the final 300ms completed hold');
   assert.equal(context.getActiveLyricBlankSegment([segment], 19), null, 'The dots stop exactly at the next lyric boundary');
 }
 
@@ -432,6 +547,7 @@ function verifyPausedDotsRealignAfterSeek() {
     },
     getLyricLineProgress: () => 1,
     updateLyricMeshProgress() {},
+    updateLyricWordLift() {},
     currentLyricFallbackText: () => '',
   };
   vm.createContext(context);
@@ -442,7 +558,10 @@ function verifyPausedDotsRealignAfterSeek() {
     'this.tick = tickLyricsParticles;',
   ].join('\n'), context);
   context.tick();
-  assert.deepEqual(JSON.parse(JSON.stringify(context.stageLyrics.current.userData.lyric.breathState.pulses)), [1, 1, 0], 'Paused dots should remain sampled at the frozen lyric time');
+  const pausedPulses = context.stageLyrics.current.userData.lyric.breathState.pulses;
+  assert.equal(pausedPulses[0], 1);
+  assert.ok(pausedPulses[1] > .7 && pausedPulses[1] < .8);
+  assert.equal(pausedPulses[2], 0, 'Paused dots should remain sampled at the frozen lyric time');
   now = 19;
   context.tick();
   assert.deepEqual(rendered, ['B'], 'Seeking past the blank while paused should immediately replace dots with the target lyric');
@@ -460,6 +579,7 @@ verifyTimelineStateIsClonedWithoutSharingNodes();
 verifyCustomQrcXmlUsesTheWordTimelineParser();
 verifyPayloadResolutionUsesOnlyQqQrcForKaraoke();
 verifyLeadingCreditsAreRemovedWithoutTouchingLyrics();
+verifyProviderOpeningLineAndTranslationMetadataRules();
 verifyBlankSegmentRules();
 verifyThreeDimensionalDotsAreClockDriven();
 verifyPausedDotsRealignAfterSeek();

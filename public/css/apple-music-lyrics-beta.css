@@ -1,0 +1,1052 @@
+/* Mineradio Apple Music lyrics beta integration.
+   AMLL Core remains an independently licensed dependency; see THIRD_PARTY_NOTICES.md. */
+
+#apple-music-lyrics-beta-stage {
+  position: fixed;
+  z-index: 5;
+  top: 52px;
+  right: clamp(38px, 5.2vw, 104px);
+  bottom: 88px;
+  left: clamp(38px, 7vw, 138px);
+  visibility: hidden;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 260ms ease, visibility 260ms;
+}
+
+#apple-music-lyrics-beta-stage.active {
+  visibility: visible;
+  opacity: 1;
+}
+
+#apple-music-lyrics-beta-surface {
+  width: min(960px, 74vw);
+  height: 100%;
+  pointer-events: none;
+  transition: width 420ms cubic-bezier(.16, 1, .3, 1);
+}
+
+#apple-music-lyrics-beta-stage.active #apple-music-lyrics-beta-surface {
+  pointer-events: auto;
+}
+
+body:has(#playlist-panel.show) #apple-music-lyrics-beta-stage,
+body:has(#playlist-panel.peek) #apple-music-lyrics-beta-stage,
+body:has(#playlist-panel.pinned) #apple-music-lyrics-beta-stage {
+  left: min(392px, 34vw);
+}
+
+body:has(#fx-panel.show) #apple-music-lyrics-beta-stage,
+body:has(#fx-panel.peek) #apple-music-lyrics-beta-stage {
+  right: min(492px, 42vw);
+}
+
+body:has(#playlist-panel.show):has(#fx-panel.show) #apple-music-lyrics-beta-surface,
+body:has(#playlist-panel.pinned):has(#fx-panel.show) #apple-music-lyrics-beta-surface {
+  width: 100%;
+}
+
+body.empty-home-active #apple-music-lyrics-beta-stage,
+body.splash-active #apple-music-lyrics-beta-stage,
+body:not(.apple-music-lyrics-beta-active) #apple-music-lyrics-beta-stage {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+#apple-music-lyrics-beta-empty {
+  position: absolute;
+  top: 38%;
+  left: 1em;
+  display: none;
+  color: rgba(255, 255, 255, .58);
+  font: 600 15px/1.4 "Segoe UI Variable", "Microsoft YaHei UI", sans-serif;
+  letter-spacing: .02em;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, .75);
+  transform: translateY(-50%);
+}
+
+#apple-music-lyrics-beta-empty.show {
+  display: block;
+  animation: amll-beta-empty-in 420ms cubic-bezier(.16, 1, .3, 1);
+}
+
+@keyframes amll-beta-empty-in {
+  from { opacity: 0; transform: translateY(calc(-50% + 9px)); }
+  to { opacity: 1; transform: translateY(-50%); }
+}
+
+.mineradio-amll-player {
+  --amll-lp-width: 100%;
+  --lyric-line-padding-x: .32em;
+  color: var(--amll-beta-text-color, #fff);
+  mix-blend-mode: normal;
+  overflow: hidden;
+  text-align: left;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+  font-kerning: normal;
+  font-optical-sizing: auto;
+  isolation: isolate;
+}
+
+.mineradio-amll-player .FmKaba_lyricLine {
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 920px);
+  min-width: 0;
+  max-width: 100%;
+  overflow: visible;
+  transform-origin: left center;
+}
+
+.mineradio-amll-player .FmKaba_lyricDuetLine {
+  align-self: flex-end;
+  text-align: right;
+  transform-origin: right center;
+}
+
+.mineradio-amll-player .FmKaba_lyricMainLine {
+  order: 0;
+  max-width: 100%;
+  opacity: 1 !important;
+  color: var(--amll-beta-text-color, #fff);
+  letter-spacing: -.022em;
+  line-height: 1.12;
+  text-wrap: balance;
+}
+
+.mineradio-amll-player .FmKaba_lyricMainLine.mineradio-amll-roman-wrapped {
+  line-height: 1.32;
+}
+
+.mineradio-amll-player .FmKaba_lyricLine > .FmKaba_lyricSubLine:nth-child(3) {
+  order: 1;
+  opacity: 1 !important;
+  color: var(--amll-beta-text-color, #fff);
+  font-size: calc(1em * var(--amll-beta-roman-scale, .5));
+  line-height: 1.34;
+  letter-spacing: .008em;
+  transition: none !important;
+}
+
+.mineradio-amll-player .FmKaba_lyricLine > .FmKaba_lyricSubLine:nth-child(2) {
+  order: 2;
+  margin-top: .24em;
+  opacity: 1 !important;
+  color: var(--amll-beta-text-color, #fff);
+  font-size: max(calc(1em * var(--amll-beta-translation-scale, .5)), 12px);
+  line-height: 1.36;
+  letter-spacing: .006em;
+  transition: none !important;
+}
+
+.mineradio-amll-player .FmKaba_romanWord {
+  box-sizing: border-box;
+  min-width: 100%;
+  padding-inline: 0 .12em;
+  color: var(--amll-beta-text-color, #fff);
+  opacity: 1 !important;
+  font-size: calc(1em * var(--amll-beta-roman-scale, .5));
+  font-weight: inherit;
+  line-height: 1.08;
+  white-space: nowrap;
+  transition: none !important;
+}
+
+.mineradio-amll-player .mineradio-amll-source-motion {
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  flex-flow: row nowrap;
+  align-items: baseline;
+  font-size: inherit;
+  line-height: inherit;
+  white-space: nowrap;
+  will-change: transform, text-shadow;
+}
+
+.mineradio-amll-player .FmKaba_romanWord.mineradio-amll-roman-segmented {
+  display: flex;
+  column-gap: .22em;
+  align-items: baseline;
+  justify-content: flex-start;
+}
+
+.mineradio-amll-player .mineradio-amll-roman-syllable {
+  display: inline-block;
+  min-width: 0;
+  flex: 0 0 auto;
+}
+
+.mineradio-amll-player
+  .FmKaba_wordWithRuby[data-mineradio-apple-korean-lexical-timing]
+  > .FmKaba_rubyWord {
+  display: none !important;
+  min-height: 0 !important;
+  height: 0 !important;
+  overflow: hidden !important;
+}
+
+.mineradio-amll-player
+  .FmKaba_wordWithRuby[data-mineradio-apple-korean-lexical-timing],
+.mineradio-amll-player
+  .FmKaba_wordWithRuby[data-mineradio-apple-korean-lexical-timing]
+  > .FmKaba_wordBody {
+  align-items: flex-start;
+}
+
+.mineradio-amll-player
+  .FmKaba_wordWithRuby[data-mineradio-apple-korean-lexical-timing]
+  .mineradio-amll-apple-lexical-source {
+  display: inline-flex;
+  align-items: baseline;
+  white-space: nowrap;
+}
+
+.mineradio-amll-player
+  .FmKaba_wordWithRuby[data-mineradio-apple-korean-word-layout] {
+  min-width: max-content;
+  white-space: nowrap;
+  word-break: keep-all;
+  overflow-wrap: normal;
+}
+
+.mineradio-amll-player
+  .FmKaba_wordWithRuby[data-mineradio-apple-korean-word-layout],
+.mineradio-amll-player
+  .FmKaba_wordWithRuby[data-mineradio-apple-korean-word-layout]
+  > .FmKaba_wordBody {
+  align-items: flex-start;
+}
+
+.mineradio-amll-player
+  .FmKaba_wordWithRuby[data-mineradio-apple-korean-word-layout]
+  > .FmKaba_wordBody {
+  width: max-content;
+  min-width: max-content;
+}
+
+.mineradio-amll-player
+  .FmKaba_wordWithRuby[data-mineradio-apple-korean-word-layout]
+  .mineradio-amll-apple-word-source {
+  display: inline-flex;
+  width: max-content;
+  min-width: max-content;
+  flex-flow: row nowrap;
+  align-items: baseline;
+  white-space: nowrap;
+  word-break: keep-all;
+  overflow-wrap: normal;
+}
+
+.mineradio-amll-player
+  .FmKaba_wordWithRuby[data-mineradio-apple-korean-word-layout]
+  .mineradio-amll-apple-word-source > * {
+  flex: 0 0 auto;
+}
+
+.mineradio-amll-player
+  .FmKaba_wordWithRuby[data-mineradio-apple-korean-word-layout]
+  > .FmKaba_wordBody
+  > .FmKaba_romanWord {
+  width: max-content;
+  min-width: 0;
+  max-width: none;
+  padding-inline: 0;
+  align-self: flex-start;
+}
+
+.mineradio-amll-player .FmKaba_lyricMainLine > .mineradio-amll-korean-columns {
+  display: inline-flex;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: .28em .48em;
+  margin: 0;
+  padding: 0;
+  contain: none;
+  vertical-align: bottom;
+  white-space: normal;
+}
+
+.mineradio-amll-player .mineradio-amll-has-korean-columns .FmKaba_lyricMainLine {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.mineradio-amll-player .mineradio-amll-korean-column {
+  display: inline-flex;
+  min-width: max-content;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-start;
+  margin: 0;
+  padding: 0;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.mineradio-amll-player .mineradio-amll-korean-source,
+.mineradio-amll-player .mineradio-amll-korean-roman {
+  display: block;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  text-align: left;
+  white-space: pre;
+}
+
+.mineradio-amll-player .mineradio-amll-korean-source {
+  line-height: 1.08;
+}
+
+.mineradio-amll-player .mineradio-amll-korean-roman {
+  margin-top: .08em;
+  line-height: 1.08;
+}
+
+.mineradio-amll-player .mineradio-amll-flat-roman-hidden {
+  display: none !important;
+}
+
+.mineradio-amll-player .mineradio-amll-has-korean-columns
+  .FmKaba_lyricLine > .FmKaba_lyricSubLine:nth-child(2) {
+  align-self: center;
+  text-align: center;
+}
+
+.mineradio-amll-player .mineradio-amll-original-run {
+  transition: none !important;
+}
+
+.mineradio-amll-player .mineradio-amll-latin-run {
+  letter-spacing: .02em;
+}
+
+.mineradio-amll-player .FmKaba_lyricMainLine
+  .mineradio-amll-original-run.mineradio-amll-latin-run {
+  letter-spacing: .01em;
+}
+
+.mineradio-amll-player .FmKaba_lyricMainLine,
+.mineradio-amll-player .FmKaba_lyricLine > .FmKaba_lyricSubLine:nth-child(3),
+.mineradio-amll-player .FmKaba_lyricLine > .FmKaba_lyricSubLine:nth-child(2),
+.mineradio-amll-player .FmKaba_romanWord {
+  text-shadow: none !important;
+}
+
+.mineradio-amll-player .FmKaba_lyricBgLine {
+  opacity: 1 !important;
+}
+
+.mineradio-amll-player .FmKaba_bgWrapperActive {
+  opacity: 1 !important;
+  transition: none !important;
+}
+
+.mineradio-amll-player .FmKaba_lyricLineWrapper[data-mineradio-blur-future],
+.mineradio-amll-player:hover .FmKaba_lyricLineWrapper[data-mineradio-blur-future] {
+  filter: blur(var(--amll-beta-line-blur, 2px)) !important;
+}
+
+.mineradio-amll-player .FmKaba_lyricLineWrapper {
+  transition:
+    filter 520ms cubic-bezier(.16, 1, .3, 1),
+    background-color 250ms ease;
+}
+
+.mineradio-amll-player .FmKaba_lyricLineWrapper[data-mineradio-line-state="current"],
+.mineradio-amll-player .FmKaba_lyricLineWrapper[data-mineradio-line-state="past"],
+.mineradio-amll-player .FmKaba_lyricLineWrapper[data-mineradio-line-state="future"],
+.mineradio-amll-player .FmKaba_lyricLineWrapper[data-mineradio-line-state="current"] .FmKaba_lyricLine:not(.FmKaba_lyricBgLine),
+.mineradio-amll-player .FmKaba_lyricLineWrapper[data-mineradio-line-state="past"] .FmKaba_lyricLine:not(.FmKaba_lyricBgLine),
+.mineradio-amll-player .FmKaba_lyricLineWrapper[data-mineradio-line-state="future"] .FmKaba_lyricLine:not(.FmKaba_lyricBgLine),
+.mineradio-amll-player .FmKaba_lyricLineWrapper[data-mineradio-line-state="current"] .FmKaba_lyricMainLine,
+.mineradio-amll-player .FmKaba_lyricLineWrapper[data-mineradio-line-state="past"] .FmKaba_lyricMainLine,
+.mineradio-amll-player .FmKaba_lyricLineWrapper[data-mineradio-line-state="future"] .FmKaba_lyricMainLine {
+  opacity: 1 !important;
+}
+
+.mineradio-amll-player .FmKaba_lyricLineWrapper[data-mineradio-line-state="current"] .mineradio-amll-original-run {
+  opacity: 1 !important;
+}
+
+.mineradio-amll-player .FmKaba_lyricLineWrapper[data-mineradio-line-state="past"] .mineradio-amll-original-run,
+.mineradio-amll-player .FmKaba_lyricLineWrapper[data-mineradio-line-state="future"] .mineradio-amll-original-run {
+  opacity: .58 !important;
+}
+
+.mineradio-amll-player .FmKaba_lyricLineWrapper[data-mineradio-line-state="current"] .FmKaba_lyricSubLine:nth-child(2) {
+  opacity: .78 !important;
+}
+
+.mineradio-amll-player .FmKaba_lyricLineWrapper[data-mineradio-line-state="past"] .FmKaba_lyricSubLine:nth-child(2),
+.mineradio-amll-player .FmKaba_lyricLineWrapper[data-mineradio-line-state="future"] .FmKaba_lyricSubLine:nth-child(2) {
+  opacity: .58 !important;
+}
+
+.mineradio-amll-player .FmKaba_lyricLineWrapper[data-mineradio-line-state="current"] .FmKaba_lyricSubLine:nth-child(3),
+.mineradio-amll-player .FmKaba_lyricLineWrapper[data-mineradio-line-state="current"] .FmKaba_romanWord {
+  opacity: 1 !important;
+}
+
+.mineradio-amll-player .FmKaba_lyricLineWrapper[data-mineradio-line-state="past"] .FmKaba_lyricSubLine:nth-child(3),
+.mineradio-amll-player .FmKaba_lyricLineWrapper[data-mineradio-line-state="future"] .FmKaba_lyricSubLine:nth-child(3),
+.mineradio-amll-player .FmKaba_lyricLineWrapper[data-mineradio-line-state="past"] .FmKaba_romanWord,
+.mineradio-amll-player .FmKaba_lyricLineWrapper[data-mineradio-line-state="future"] .FmKaba_romanWord {
+  opacity: .58 !important;
+}
+
+.mineradio-amll-player .FmKaba_lyricLineWrapper[data-mineradio-line-state="current"]
+  .FmKaba_lyricLine:not(.FmKaba_lyricBgLine) > .FmKaba_lyricMainLine.FmKaba_active {
+  --bright-mask-alpha: 1 !important;
+  --dark-mask-alpha: .58 !important;
+}
+
+.mineradio-amll-player .FmKaba_lyricLineWrapper[data-mineradio-line-state="past"]
+  .FmKaba_lyricLine:not(.FmKaba_lyricBgLine) > .FmKaba_lyricMainLine,
+.mineradio-amll-player .FmKaba_lyricLineWrapper[data-mineradio-line-state="future"]
+  .FmKaba_lyricLine:not(.FmKaba_lyricBgLine) > .FmKaba_lyricMainLine {
+  --bright-mask-alpha: 1 !important;
+  --dark-mask-alpha: 1 !important;
+}
+
+.mineradio-amll-player .FmKaba_lyricBgLine > .FmKaba_lyricMainLine.FmKaba_active {
+  --bright-mask-alpha: .68 !important;
+  --dark-mask-alpha: .48 !important;
+}
+
+.mineradio-amll-player.amll-beta-glow-off .FmKaba_emphasize,
+.mineradio-amll-player.amll-beta-glow-off .FmKaba_emphasize *,
+.mineradio-amll-player.amll-beta-glow-off .FmKaba_emphasizeWrapper {
+  filter: none !important;
+  text-shadow: none !important;
+}
+
+.mineradio-amll-player[data-quality="power"] .FmKaba_lyricLineWrapper[data-mineradio-blur-future] {
+  will-change: auto;
+}
+
+.mineradio-amll-player[data-clarity="1"] {
+  text-rendering: optimizeSpeed;
+}
+
+.mineradio-amll-player[data-clarity="3"],
+.mineradio-amll-player[data-clarity="4"] {
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+}
+
+.mineradio-amll-player[data-clarity="4"] .FmKaba_lyricMainLine,
+.mineradio-amll-player[data-clarity="4"] .FmKaba_lyricSubLine {
+  transform: translateZ(0);
+}
+
+.mineradio-amll-player.amll-beta-reduce-motion .FmKaba_lyricLineWrapper,
+.mineradio-amll-player.amll-beta-reduce-motion .FmKaba_lyricLine {
+  transition-duration: 180ms !important;
+}
+
+@media (max-width: 1080px) {
+  #apple-music-lyrics-beta-stage {
+    right: 34px;
+    left: 34px;
+  }
+  #apple-music-lyrics-beta-surface {
+    width: min(860px, 84vw);
+  }
+}
+
+@media (max-width: 760px) {
+  #apple-music-lyrics-beta-stage {
+    top: 48px;
+    right: 22px;
+    bottom: 86px;
+    left: 22px;
+  }
+  #apple-music-lyrics-beta-surface {
+    width: 100%;
+  }
+}
+
+/* Visual console entry */
+.amll-beta-entry-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px 12px;
+  align-items: center;
+  margin: 12px 0 4px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, .095);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 88% 10%, rgba(125, 159, 255, .10), transparent 36%),
+    rgba(255, 255, 255, .026);
+  box-shadow: inset 0 1px rgba(255, 255, 255, .045);
+  transition: border-color 240ms ease, background 240ms ease;
+}
+
+.amll-beta-entry-card.enabled {
+  border-color: rgba(160, 188, 255, .32);
+  background:
+    radial-gradient(circle at 88% 10%, rgba(125, 159, 255, .17), transparent 40%),
+    rgba(255, 255, 255, .045);
+}
+
+.amll-beta-entry-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.amll-beta-entry-copy b {
+  color: rgba(255, 255, 255, .94);
+  font-size: 13px;
+}
+
+.amll-beta-entry-copy small {
+  overflow: hidden;
+  color: rgba(255, 255, 255, .46);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.amll-beta-entry-kicker {
+  color: rgba(174, 196, 255, .72);
+  font: 700 8px/1.2 "JetBrains Mono", monospace;
+  letter-spacing: .14em;
+}
+
+.amll-beta-entry-card > button {
+  grid-column: 1 / -1;
+  height: 32px;
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 10px;
+  color: rgba(255, 255, 255, .76);
+  background: rgba(255, 255, 255, .045);
+  cursor: pointer;
+  transition: color 180ms ease, background 180ms ease, border-color 180ms ease;
+}
+
+.amll-beta-entry-card > button:hover {
+  color: #fff;
+  border-color: rgba(164, 190, 255, .3);
+  background: rgba(164, 190, 255, .09);
+}
+
+.amll-beta-switch {
+  position: relative;
+  display: inline-flex;
+  width: 38px;
+  height: 22px;
+  cursor: pointer;
+}
+
+.amll-beta-switch.large {
+  width: 48px;
+  height: 28px;
+}
+
+.amll-beta-switch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.amll-beta-switch span {
+  width: 100%;
+  height: 100%;
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .08);
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, .28);
+  transition: background 220ms ease, border-color 220ms ease;
+}
+
+.amll-beta-switch span::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .76);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .4);
+  transition: transform 260ms cubic-bezier(.16, 1, .3, 1), background 220ms ease;
+}
+
+.amll-beta-switch.large span::after {
+  width: 20px;
+  height: 20px;
+}
+
+.amll-beta-switch input:checked + span {
+  border-color: rgba(157, 187, 255, .58);
+  background: rgba(113, 153, 255, .48);
+}
+
+.amll-beta-switch input:checked + span::after {
+  background: #fff;
+  transform: translateX(16px);
+}
+
+.amll-beta-switch.large input:checked + span::after {
+  transform: translateX(20px);
+}
+
+/* Dedicated settings page */
+.amll-beta-settings-mask {
+  z-index: 1600;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background:
+    radial-gradient(circle at 28% 16%, rgba(94, 121, 188, .14), transparent 38%),
+    rgba(2, 4, 8, .78);
+  backdrop-filter: blur(26px) saturate(.82);
+  -webkit-backdrop-filter: blur(26px) saturate(.82);
+}
+
+.amll-beta-settings-mask.show {
+  display: flex;
+}
+
+.amll-beta-settings-page {
+  width: min(1040px, calc(100vw - 44px));
+  max-height: min(880px, calc(100vh - 52px));
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, .11);
+  border-radius: 28px;
+  color: rgba(255, 255, 255, .9);
+  background:
+    linear-gradient(145deg, rgba(18, 21, 29, .985), rgba(7, 9, 14, .99)),
+    #090b10;
+  box-shadow: 0 44px 120px rgba(0, 0, 0, .64), inset 0 1px rgba(255, 255, 255, .055);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(158, 184, 255, .28) transparent;
+  animation: amll-beta-settings-in 440ms cubic-bezier(.16, 1, .3, 1);
+}
+
+@keyframes amll-beta-settings-in {
+  from { opacity: 0; transform: translateY(18px) scale(.985); }
+  to { opacity: 1; transform: none; }
+}
+
+.amll-beta-settings-page::-webkit-scrollbar { width: 5px; }
+.amll-beta-settings-page::-webkit-scrollbar-thumb {
+  border-radius: 99px;
+  background: rgba(158, 184, 255, .28);
+}
+
+.amll-beta-settings-head {
+  position: sticky;
+  z-index: 4;
+  top: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 26px 28px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, .065);
+  background: rgba(10, 12, 18, .92);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+}
+
+.amll-beta-settings-head span,
+.amll-beta-settings-section header span {
+  color: rgba(163, 189, 255, .64);
+  font: 700 9px/1.2 "JetBrains Mono", monospace;
+  letter-spacing: .16em;
+}
+
+.amll-beta-settings-head h2 {
+  margin: 5px 0 3px;
+  color: #fff;
+  font-size: 25px;
+  letter-spacing: -.025em;
+}
+
+.amll-beta-settings-head p {
+  margin: 0;
+  color: rgba(255, 255, 255, .44);
+  font-size: 12px;
+}
+
+.amll-beta-settings-close {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 50%;
+  color: rgba(255, 255, 255, .72);
+  background: rgba(255, 255, 255, .04);
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.amll-beta-master-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin: 22px 28px 0;
+  padding: 16px 18px;
+  border: 1px solid rgba(153, 182, 255, .18);
+  border-radius: 18px;
+  background: rgba(119, 153, 239, .065);
+}
+
+.amll-beta-master-row > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.amll-beta-master-row b { font-size: 14px; }
+.amll-beta-master-row small { color: rgba(255, 255, 255, .45); font-size: 11px; }
+
+.amll-beta-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding: 18px 28px 22px;
+}
+
+.amll-beta-settings-section {
+  padding: 17px;
+  border: 1px solid rgba(255, 255, 255, .07);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, .023);
+}
+
+.amll-beta-settings-section.wide { grid-column: 1 / -1; }
+
+.amll-beta-settings-section header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.amll-beta-settings-section header b {
+  color: rgba(255, 255, 255, .88);
+  font-size: 14px;
+}
+
+.amll-beta-setting-row {
+  display: grid;
+  grid-template-columns: minmax(126px, .85fr) minmax(130px, 1.35fr) 54px;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  border-top: 1px solid rgba(255, 255, 255, .045);
+}
+
+.amll-beta-setting-row:first-of-type { border-top: 0; }
+.amll-beta-setting-row > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  color: rgba(255, 255, 255, .7);
+  font-size: 11px;
+}
+
+.amll-beta-setting-row > span small {
+  color: rgba(255, 255, 255, .34);
+  font-size: 9px;
+  line-height: 1.3;
+}
+
+.amll-beta-setting-row output {
+  color: rgba(180, 201, 255, .7);
+  font: 600 9px/1 "JetBrains Mono", monospace;
+  text-align: right;
+}
+
+.amll-beta-setting-row input[type="range"] {
+  width: 100%;
+  height: 3px;
+  accent-color: #9ebcff;
+  cursor: pointer;
+}
+
+.amll-beta-setting-row select {
+  grid-column: 2 / -1;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid rgba(255, 255, 255, .09);
+  border-radius: 9px;
+  outline: 0;
+  color: rgba(255, 255, 255, .75);
+  background: #141822;
+  font-size: 10px;
+}
+
+.amll-beta-setting-row.color {
+  grid-template-columns: 1fr auto;
+}
+
+.amll-beta-setting-row.color input[type="color"] {
+  width: 36px;
+  height: 26px;
+  padding: 2px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.amll-beta-setting-row.toggle {
+  grid-template-columns: 1fr auto;
+}
+
+.amll-beta-setting-row.toggle input[type="checkbox"] {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  margin: 0;
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 999px;
+  outline: 0;
+  background: rgba(255, 255, 255, .08);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .08);
+  cursor: pointer;
+  transition: border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
+}
+
+.amll-beta-setting-row.toggle input[type="checkbox"]::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .72);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .32);
+  transition: transform 190ms cubic-bezier(.2, .82, .2, 1), background-color 180ms ease;
+}
+
+.amll-beta-setting-row.toggle input[type="checkbox"]:checked {
+  border-color: rgba(157, 187, 255, .58);
+  background: rgba(113, 153, 255, .48);
+  box-shadow: inset 0 0 0 1px rgba(185, 205, 255, .08), 0 0 18px rgba(98, 139, 255, .12);
+}
+
+.amll-beta-setting-row.toggle input[type="checkbox"]:checked::before {
+  background: #fff;
+  transform: translateX(16px);
+}
+
+.amll-beta-setting-row.toggle input[type="checkbox"]:focus-visible {
+  box-shadow: 0 0 0 3px rgba(139, 174, 255, .24);
+}
+
+.amll-beta-source-switches {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 24px;
+}
+
+.amll-beta-source-switches .amll-beta-setting-row {
+  border-top: 0;
+}
+
+.amll-beta-setting-row.toggle.is-disabled {
+  opacity: .42;
+}
+
+.amll-beta-setting-row.toggle input:disabled {
+  cursor: not-allowed;
+}
+
+.amll-beta-auth-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 150px;
+  gap: 12px;
+  margin-top: 9px;
+}
+
+.amll-beta-auth-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.amll-beta-auth-field > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: rgba(255, 255, 255, .66);
+  font-size: 10px;
+}
+
+.amll-beta-auth-field small {
+  color: rgba(255, 255, 255, .32);
+  font-size: 8px;
+}
+
+.amll-beta-auth-field input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 34px;
+  padding: 0 11px;
+  border: 1px solid rgba(255, 255, 255, .09);
+  border-radius: 10px;
+  outline: 0;
+  color: rgba(255, 255, 255, .82);
+  background: rgba(4, 6, 11, .58);
+  font: 500 10px/1 "JetBrains Mono", monospace;
+}
+
+.amll-beta-auth-field input:focus {
+  border-color: rgba(151, 182, 255, .44);
+  box-shadow: 0 0 0 3px rgba(113, 153, 255, .09);
+}
+
+.amll-beta-auth-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 11px;
+}
+
+.amll-beta-auth-actions button {
+  height: 31px;
+  padding: 0 11px;
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 9px;
+  color: rgba(255, 255, 255, .7);
+  background: rgba(255, 255, 255, .045);
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.amll-beta-auth-actions button:hover { background: rgba(255, 255, 255, .075); }
+.amll-beta-auth-actions button:disabled { opacity: .4; cursor: wait; }
+.amll-beta-auth-actions button.danger { color: rgba(255, 178, 178, .7); }
+
+.amll-beta-auth-status {
+  min-width: 0;
+  margin-right: auto;
+  color: rgba(255, 255, 255, .43);
+  font-size: 9px;
+}
+
+.amll-beta-auth-status.good { color: rgba(171, 226, 190, .78); }
+.amll-beta-auth-status.fail { color: rgba(255, 164, 164, .78); }
+
+.amll-beta-source-note {
+  margin-top: 9px;
+  color: rgba(255, 255, 255, .28);
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.amll-beta-quality-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.amll-beta-quality-options label { cursor: pointer; }
+.amll-beta-quality-options input {
+  position: absolute;
+  opacity: 0;
+}
+
+.amll-beta-quality-options label > span {
+  display: flex;
+  min-height: 58px;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, .07);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, .025);
+  transition: border-color 180ms ease, background 180ms ease;
+}
+
+.amll-beta-quality-options input:checked + span {
+  border-color: rgba(151, 182, 255, .36);
+  background: rgba(116, 153, 244, .09);
+}
+
+.amll-beta-quality-options b { color: rgba(255, 255, 255, .78); font-size: 11px; }
+.amll-beta-quality-options small { color: rgba(255, 255, 255, .38); font-size: 9px; line-height: 1.4; }
+
+.amll-beta-settings-foot {
+  position: sticky;
+  z-index: 4;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 28px;
+  border-top: 1px solid rgba(255, 255, 255, .065);
+  background: rgba(10, 12, 18, .94);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+}
+
+.amll-beta-settings-foot > div {
+  margin-right: auto;
+  color: rgba(255, 255, 255, .36);
+  font-size: 10px;
+}
+
+.amll-beta-settings-foot button {
+  height: 34px;
+  padding: 0 15px;
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 10px;
+  color: rgba(255, 255, 255, .7);
+  background: rgba(255, 255, 255, .04);
+  cursor: pointer;
+}
+
+.amll-beta-settings-foot button.primary {
+  border-color: rgba(151, 182, 255, .34);
+  color: #fff;
+  background: rgba(116, 153, 244, .17);
+}
+
+@media (max-width: 760px) {
+  .amll-beta-settings-mask { padding: 12px; }
+  .amll-beta-settings-page {
+    width: calc(100vw - 24px);
+    max-height: calc(100vh - 24px);
+    border-radius: 22px;
+  }
+  .amll-beta-settings-grid { grid-template-columns: 1fr; padding: 14px 18px 18px; }
+  .amll-beta-settings-section.wide { grid-column: auto; }
+  .amll-beta-source-switches,
+  .amll-beta-auth-grid { grid-template-columns: 1fr; }
+  .amll-beta-auth-actions { flex-wrap: wrap; }
+  .amll-beta-auth-status { width: 100%; }
+  .amll-beta-settings-head { padding: 20px 18px 16px; }
+  .amll-beta-master-row { margin: 16px 18px 0; }
+  .amll-beta-quality-options { grid-template-columns: 1fr; }
+  .amll-beta-settings-foot { padding: 13px 18px; }
+  .amll-beta-settings-foot > div { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #apple-music-lyrics-beta-stage,
+  .amll-beta-settings-page,
+  .amll-beta-entry-card {
+    animation: none !important;
+    transition-duration: 120ms !important;
+  }
+}

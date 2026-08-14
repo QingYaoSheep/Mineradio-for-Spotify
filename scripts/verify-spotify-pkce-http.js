@@ -46,7 +46,8 @@ global.fetch = async (url, options = {}) => {
       headers: { 'Content-Type': 'application/json' },
     });
   }
-  if (/^https:\/\/api\.spotify\.com\/v1\/me\/player\/(?:play|pause|next|previous)$/.test(String(url))) {
+  if (/^https:\/\/api\.spotify\.com\/v1\/me\/player\/(?:play|pause|next|previous)(?:\?.*)?$/.test(String(url))
+      || /^https:\/\/api\.spotify\.com\/v1\/me\/player\/seek\?position_ms=\d+$/.test(String(url))) {
     return new Response(null, { status: 204 });
   }
   throw new Error(`Unexpected upstream request: ${url}`);
@@ -133,6 +134,15 @@ function request(pathname, options = {}) {
       const upstream = upstreamCalls.find(call => call.url.endsWith(`/v1/me/player/${route}`));
       assert.equal(upstream.options.headers.Authorization, 'Bearer http-access-token');
     }
+
+    const seek = await request('/api/spotify/web-api/me/player/seek?position_ms=187650', {
+      method: 'PUT',
+      headers: { Origin: `http://127.0.0.1:${port}` },
+    });
+    assert.equal(seek.status, 204, 'Spotify seek proxy failed');
+    const seekUpstream = upstreamCalls.find(call => call.url.endsWith('/v1/me/player/seek?position_ms=187650'));
+    assert.ok(seekUpstream, 'Spotify seek must preserve the validated position_ms query');
+    assert.equal(seekUpstream.options.headers.Authorization, 'Bearer http-access-token');
 
     const rejected = await request('/api/spotify/web-api/me/player/play', {
       method: 'PUT',

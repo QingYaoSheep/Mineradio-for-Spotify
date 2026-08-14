@@ -57,21 +57,34 @@ const { analyzePodcastDjStream, analyzePodcastDjIntro } = require('./dj-analyzer
 const {
   buildQQMusicLyricRequestParam,
   decodeQQMusicuLyricData,
+  decryptQQMusicQrc,
 } = require('./qq-lyric-codec');
-const { LyricCache } = require('./lyric-cache');
+const { LyricCache, lyricSongCacheIdentity, lyricSongCacheKey } = require('./lyric-cache');
+const {
+  clearOpeningTranslationMetadata,
+  sanitizeCachedLyricPayload,
+} = require('./public/js/lyric-credit-filter');
+const { RomanizationEngine } = require('./romanization-engine');
 const { SpotifyAuthSession } = require('./spotify-auth-session');
 const { createMemorySpotifyAuthStore } = require('./spotify-secure-auth-store');
+const { createMemoryAppleMusicAuthStore } = require('./apple-music-secure-auth-store');
+const { AppleMusicLyricsProvider } = require('./apple-music-lyrics-provider');
+const { evaluateSpotifyOnlyRoute } = require('./spotify-only-route-policy');
+const { spotifyWebApiProxyTarget } = require('./spotify-web-api-policy');
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
+const SPOTIFY_ONLY_MODE = process.env.MINERADIO_SPOTIFY_ONLY !== '0';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const COOKIE_FILE = process.env.COOKIE_FILE || path.join(__dirname, '.cookie');
 const QQ_COOKIE_FILE = process.env.QQ_COOKIE_FILE || path.join(__dirname, '.qq-cookie');
 const UPDATE_WORK_DIR = process.env.MINERADIO_UPDATE_DIR || path.join(__dirname, 'updates');
 const UPDATE_DOWNLOAD_DIR = process.env.MINERADIO_UPDATE_DOWNLOAD_DIR || path.join(UPDATE_WORK_DIR, 'downloads');
 const UPDATE_PATCH_BACKUP_DIR = process.env.MINERADIO_PATCH_BACKUP_DIR || path.join(UPDATE_WORK_DIR, 'backups', 'patches');
-const BEATMAP_CACHE_DIR = process.env.MINERADIO_BEAT_CACHE_DIR || 'D:\\MineradioCache\\beatmaps';
-const LYRIC_CACHE_DIR = process.env.MINERADIO_LYRIC_CACHE_DIR || path.join(os.tmpdir(), 'Mineradio', 'lyric-cache');
+const BEATMAP_CACHE_DIR = process.env.MINERADIO_BEAT_CACHE_DIR || 'D:\\BetterRadioCache\\beatmaps';
+const LYRIC_CACHE_DIR = process.env.MINERADIO_LYRIC_CACHE_DIR || path.join(os.tmpdir(), 'Better Radio', 'lyric-cache');
+const ROMANIZATION_OVERRIDES_FILE = process.env.MINERADIO_ROMANIZATION_OVERRIDES
+  || path.join(path.dirname(LYRIC_CACHE_DIR), 'romanization-overrides.json');
 const APP_PACKAGE = readPackageInfo();
 const APP_VERSION = process.env.MINERADIO_VERSION || APP_PACKAGE.version || '0.9.11';
 const UPDATE_CONFIG = readUpdateConfig(APP_PACKAGE);
@@ -82,8 +95,12 @@ const PATCH_ALLOWED_FILES = new Set([
   'dj-analyzer.js',
   'qq-lyric-codec.js',
   'lyric-cache.js',
+  'romanization-engine.js',
   'spotify-auth-session.js',
   'spotify-secure-auth-store.js',
+  'apple-music-secure-auth-store.js',
+  'apple-music-lyrics-provider.js',
+  'apple-music-ttml.js',
   'package.json',
   'package-lock.json',
 ]);
@@ -104,7 +121,34 @@ const WEATHER_DEFAULT_LOCATION = {
 };
 
 const updateDownloadJobs = new Map();
-const lyricCache = new LyricCache({ dir: LYRIC_CACHE_DIR });
+function migrateLegacyLyricCachePayload(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  const encryptedQrc = String(
+    payload.qrcEncrypted
+    || payload.encryptedQrc
+    || payload.legacyEncryptedQrc
+    || (/^[0-9a-f]{16,}$/i.test(String(payload.qrc || '').trim()) ? payload.qrc : '')
+  ).trim();
+  const hasRemoteRoma = Object.prototype.hasOwnProperty.call(payload, 'roma');
+  const migrated = Object.assign({}, payload);
+  if (encryptedQrc) migrated.qrc = decryptQQMusicQrc(encryptedQrc);
+  delete migrated.qrcEncrypted;
+  delete migrated.encryptedQrc;
+  delete migrated.legacyEncryptedQrc;
+  delete migrated.roma;
+  const sanitized = sanitizeCachedLyricPayload(migrated);
+  const changed = encryptedQrc || hasRemoteRoma || sanitized !== migrated;
+  return changed ? { payload:sanitized, preserveOriginal:Boolean(encryptedQrc) } : null;
+}
+const lyricCache = new LyricCache({
+  dir:LYRIC_CACHE_DIR,
+  migratePayload:migrateLegacyLyricCachePayload,
+});
+const romanizationEngine = new RomanizationEngine({ overridesPath:ROMANIZATION_OVERRIDES_FILE });
+const romanizationSessionId = crypto.randomUUID();
+romanizationEngine.preload().catch(error => {
+  console.warn('[Romanization] dictionary preload failed:', error.message);
+});
 const lyricCacheRefreshJobs = new Map();
 
 function applySystemCertificateAuthorities() {
@@ -191,17 +235,27 @@ function rawCookieFallback(input) {
   return '';
 }
 let userCookie = '';
-try { if (fs.existsSync(COOKIE_FILE)) userCookie = fs.readFileSync(COOKIE_FILE, 'utf8').trim(); }
+try { if (!SPOTIFY_ONLY_MODE && fs.existsSync(COOKIE_FILE)) userCookie = fs.readFileSync(COOKIE_FILE, 'utf8').trim(); }
 catch (e) { userCookie = ''; }
 function saveCookie(c) {
+  if (SPOTIFY_ONLY_MODE) {
+    userCookie = '';
+    try { fs.rmSync(COOKIE_FILE, { force: true }); } catch (e) {}
+    return;
+  }
   userCookie = normalizeCookieHeader(c) || rawCookieFallback(c);
   try { fs.writeFileSync(COOKIE_FILE, userCookie); } catch (e) {}
 }
 
 let qqCookie = '';
-try { if (fs.existsSync(QQ_COOKIE_FILE)) qqCookie = fs.readFileSync(QQ_COOKIE_FILE, 'utf8').trim(); }
+try { if (!SPOTIFY_ONLY_MODE && fs.existsSync(QQ_COOKIE_FILE)) qqCookie = fs.readFileSync(QQ_COOKIE_FILE, 'utf8').trim(); }
 catch (e) { qqCookie = ''; }
 function saveQQCookie(c) {
+  if (SPOTIFY_ONLY_MODE) {
+    qqCookie = '';
+    try { fs.rmSync(QQ_COOKIE_FILE, { force: true }); } catch (e) {}
+    return;
+  }
   qqCookie = normalizeCookieHeader(c) || rawCookieFallback(c);
   try { fs.writeFileSync(QQ_COOKIE_FILE, qqCookie); } catch (e) {}
 }
@@ -459,7 +513,7 @@ function normalizeManifestUpdateInfo(data) {
   const assetUrls = [downloadUrl].concat(Array.isArray(asset.downloadUrls) ? asset.downloadUrls : []);
   const patchUrls = patch ? [patch.downloadUrl].concat(Array.isArray(patch.downloadUrls) ? patch.downloadUrls : []) : [];
   const patchInfo = patch && patch.downloadUrl ? {
-    name: patch.name || updateAssetNameFromUrl(patch.downloadUrl) || `Mineradio-${APP_VERSION}→${latestVersion}.patch.json`,
+    name: patch.name || updateAssetNameFromUrl(patch.downloadUrl) || `Better-Radio-${APP_VERSION}→${latestVersion}.patch.json`,
     size: Number(patch.size || 0) || 0,
     contentType: patch.contentType || patch.content_type || 'application/json',
     downloadUrl: patch.downloadUrl,
@@ -473,7 +527,7 @@ function normalizeManifestUpdateInfo(data) {
     ? release.notes.slice(0, 4).map(cleanReleaseLine).filter(Boolean)
     : (extractReleaseNotes(release.body || data.body).length ? extractReleaseNotes(release.body || data.body) : UPDATE_FALLBACK_NOTES);
   const assetInfo = downloadUrl ? {
-    name: asset.name || updateAssetNameFromUrl(downloadUrl) || `Mineradio-for-Spotify-${latestVersion}-Setup.exe`,
+    name: asset.name || updateAssetNameFromUrl(downloadUrl) || `Better-Radio-${latestVersion}-Setup.exe`,
     size: Number(asset.size || 0) || 0,
     contentType: asset.contentType || asset.content_type || '',
     downloadUrl,
@@ -489,7 +543,7 @@ function normalizeManifestUpdateInfo(data) {
     latestVersion,
     release: {
       tagName: release.tagName || release.tag_name || data.tagName || ('v' + latestVersion),
-      name: release.name || data.name || ('Mineradio for Spotify v' + latestVersion),
+      name: release.name || data.name || ('Better Radio v' + latestVersion),
       version: latestVersion,
       publishedAt: release.publishedAt || release.published_at || data.publishedAt || '',
       htmlUrl: release.htmlUrl || release.html_url || data.htmlUrl || '',
@@ -508,7 +562,7 @@ async function readUpdateManifest(ref) {
   if (!value) throw new Error('UPDATE_MANIFEST_MISSING');
   if (/^https?:\/\//i.test(value)) {
     const resp = await fetch(value, {
-      headers: { 'User-Agent': `Mineradio-for-Spotify/${APP_VERSION}` },
+      headers: { 'User-Agent': `Better-Radio/${APP_VERSION}` },
     });
     if (!resp.ok) throw new Error('Update manifest ' + resp.status);
     return resp.json();
@@ -600,7 +654,7 @@ function localUpdateFallback(reason, opts) {
     latestVersion: APP_VERSION,
     release: {
       tagName: 'v' + APP_VERSION,
-      name: 'Mineradio for Spotify v' + APP_VERSION,
+      name: 'Better Radio v' + APP_VERSION,
       version: APP_VERSION,
       htmlUrl: '',
       downloadUrl: '',
@@ -661,7 +715,7 @@ async function fetchTextFromCandidates(candidates, timeoutMs) {
     const candidate = list[i];
     try {
       const resp = await fetchWithTimeout(candidate.url, {
-        headers: { 'User-Agent': `Mineradio-for-Spotify/${APP_VERSION}` },
+        headers: { 'User-Agent': `Better-Radio/${APP_VERSION}` },
       }, timeoutMs || 6500);
       if (!resp.ok) throw updateError('HTTP_' + resp.status, 'HTTP ' + resp.status);
       return { text: await resp.text(), candidate };
@@ -687,7 +741,7 @@ function githubReleaseDownloadUrl(version, fileName) {
 }
 function parseLatestYmlUpdateInfo(text, reason) {
   const latestVersion = normalizeVersion(yamlScalar(text, 'version') || APP_VERSION) || APP_VERSION;
-  const assetPath = yamlScalar(text, 'path') || yamlScalar(text, 'url') || `Mineradio-for-Spotify-${latestVersion}-Setup.exe`;
+  const assetPath = yamlScalar(text, 'path') || yamlScalar(text, 'url') || `Better-Radio-${latestVersion}-Setup.exe`;
   const sha512 = normalizeDigest(yamlScalar(text, 'sha512'), 'sha512');
   const size = Number(yamlScalar(text, 'size') || 0) || 0;
   const releaseDate = yamlScalar(text, 'releaseDate');
@@ -710,7 +764,7 @@ function parseLatestYmlUpdateInfo(text, reason) {
     latestVersion,
     release: {
       tagName: 'v' + latestVersion,
-      name: 'Mineradio for Spotify v' + latestVersion,
+      name: 'Better Radio v' + latestVersion,
       version: latestVersion,
       publishedAt: releaseDate,
       htmlUrl: `https://github.com/${UPDATE_CONFIG.owner}/${UPDATE_CONFIG.repo}/releases/tag/v${latestVersion}`,
@@ -742,7 +796,7 @@ async function fetchLatestUpdateInfo() {
     const resp = await fetch(apiUrl, {
       signal: controller.signal,
       headers: {
-        'User-Agent': `Mineradio-for-Spotify/${APP_VERSION}`,
+        'User-Agent': `Better-Radio/${APP_VERSION}`,
         'Accept': 'application/vnd.github+json',
       },
     });
@@ -763,7 +817,7 @@ async function fetchLatestUpdateInfo() {
       latestVersion,
       release: {
         tagName: data.tag_name || ('v' + latestVersion),
-        name: data.name || ('Mineradio for Spotify v' + latestVersion),
+        name: data.name || ('Better Radio v' + latestVersion),
         version: latestVersion,
         publishedAt: data.published_at || '',
         htmlUrl: data.html_url || '',
@@ -784,13 +838,13 @@ async function fetchLatestUpdateInfo() {
   }
 }
 function safeUpdateFileName(name, version) {
-  const raw = String(name || '').trim() || `Mineradio-for-Spotify-${version || APP_VERSION}.exe`;
+  const raw = String(name || '').trim() || `Better-Radio-${version || APP_VERSION}.exe`;
   const cleaned = raw
     .replace(/[<>:"/\\|?*\x00-\x1F]/g, '-')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 160);
-  return cleaned || `Mineradio-for-Spotify-${version || APP_VERSION}.exe`;
+  return cleaned || `Better-Radio-${version || APP_VERSION}.exe`;
 }
 function publicUpdateJob(job) {
   if (!job) return { ok: false, error: 'UPDATE_JOB_NOT_FOUND' };
@@ -839,7 +893,7 @@ async function downloadUpdateAsset(job) {
 
     const resp = await fetch(job.downloadUrl, {
       headers: {
-        'User-Agent': `Mineradio-for-Spotify/${APP_VERSION}`,
+        'User-Agent': `Better-Radio/${APP_VERSION}`,
       },
     });
     if (!resp.ok) throw new Error('Download failed ' + resp.status);
@@ -1025,7 +1079,7 @@ async function downloadUpdateAssetWithMirrors(job) {
       job.message = job.total ? '正在下载完整安装包' : '正在下载完整安装包，等待服务器返回大小';
 
       const resp = await fetchWithTimeout(candidate.url, {
-        headers: { 'User-Agent': `Mineradio-for-Spotify/${APP_VERSION}` },
+        headers: { 'User-Agent': `Better-Radio/${APP_VERSION}` },
       }, 14000);
       if (!resp.ok) throw updateError('HTTP_' + resp.status, 'HTTP ' + resp.status);
 
@@ -1223,7 +1277,7 @@ async function downloadAndApplyPatch(job) {
     job.updatedAt = Date.now();
 
     const resp = await fetch(job.downloadUrl, {
-      headers: { 'User-Agent': `Mineradio-for-Spotify/${APP_VERSION}` },
+      headers: { 'User-Agent': `Better-Radio/${APP_VERSION}` },
     });
     if (!resp.ok) throw new Error('Patch download failed ' + resp.status);
 
@@ -1275,7 +1329,7 @@ async function downloadPatchBufferFromCandidate(job, candidate, index, total) {
   job.updatedAt = Date.now();
 
   const resp = await fetchWithTimeout(candidate.url, {
-    headers: { 'User-Agent': `Mineradio-for-Spotify/${APP_VERSION}` },
+    headers: { 'User-Agent': `Better-Radio/${APP_VERSION}` },
   }, 12000);
   if (!resp.ok) throw updateError('HTTP_' + resp.status, 'HTTP ' + resp.status);
 
@@ -2837,6 +2891,25 @@ function normalizeQQSongId(id) {
   return n ? Number(n) : 0;
 }
 
+function isTransientQQLyricRequestError(error) {
+  const code = String(error && error.code || '');
+  const message = String(error && error.message || error || '');
+  return /ECONNRESET|ETIMEDOUT|ECONNREFUSED|EPIPE|socket hang up|network|fetch failed|request timeout/i.test(code + ' ' + message);
+}
+
+async function requestQQLyricMusicu(payload, opts) {
+  let lastError = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await qqMusicRequest(payload, opts);
+    } catch (error) {
+      lastError = error;
+      if (attempt > 0 || !isTransientQQLyricRequestError(error)) throw error;
+    }
+  }
+  throw lastError;
+}
+
 async function handleQQLyric(mid, id) {
   const songMID = String(mid || '').trim();
   const songID = normalizeQQSongId(id);
@@ -2845,12 +2918,11 @@ async function handleQQLyric(mid, id) {
   let lyricText = '';
   let transText = '';
   let qrcText = '';
-  let romaText = '';
   let source = 'qq-musicu';
 
   try {
     const param = buildQQMusicLyricRequestParam(songMID, songID);
-    const json = await qqMusicRequest({
+    const json = await requestQQLyricMusicu({
       comm: { ct: 24, cv: 0 },
       lyric: {
         module: 'music.musichallSong.PlayLyricInfo',
@@ -2864,12 +2936,10 @@ async function handleQQLyric(mid, id) {
       lyricText = decoded.lyric;
       transText = decoded.tlyric;
       qrcText = decoded.qrc;
-      romaText = decoded.roma;
     } else {
       lyricText = decodeQQLyricText(data && data.lyric);
       transText = decodeQQLyricText(data && data.trans);
       qrcText = typeof (data && data.qrc) === 'string' ? decodeQQLyricText(data.qrc) : '';
-      romaText = decodeQQLyricText(data && data.roma);
     }
   } catch (e) {
     console.warn('[QQLyric] musicu failed:', e.message);
@@ -2911,18 +2981,8 @@ async function handleQQLyric(mid, id) {
     tlyric: transText,
     yrc: '',
     qrc: qrcText,
-    roma: romaText,
     source: lyricText || qrcText ? source : 'qq-empty',
   };
-}
-
-function lyricCacheKey(provider, id, mid) {
-  provider = String(provider || '').toLowerCase();
-  if (provider === 'qq') {
-    const songMID = String(mid || '').trim();
-    return songMID ? `qq:mid:${songMID}` : `qq:id:${normalizeQQSongId(id)}`;
-  }
-  return `netease:id:${String(id || '').trim()}`;
 }
 
 function lyricMatchMetadataFromUrl(url) {
@@ -2940,28 +3000,142 @@ function attachLyricMatchMetadata(payload, match) {
 }
 
 function lyricPayloadIsCacheable(payload) {
-  return Boolean(payload && (String(payload.qrc || '').trim() || String(payload.lyric || '').trim()));
+  return Boolean(payload && (
+    String(payload.qrc || '').trim()
+    || String(payload.lyric || '').trim()
+    || Array.isArray(payload.structuredLines) && payload.structuredLines.some(line => String(line && line.text || '').trim())
+  ));
+}
+
+function sanitizeLyricCacheSong(song) {
+  song = song || {};
+  return {
+    name: String(song.name || song.title || '').trim(),
+    artist: String(song.artist || '').trim(),
+    artists: Array.isArray(song.artists) ? song.artists.slice(0, 8) : [],
+    album: String(song.album || '').trim(),
+    isrc: String(song.isrc || '').trim(),
+    duration: Number(song.duration || song.dt || 0) || 0,
+  };
+}
+
+function sanitizeLyricCacheCandidate(candidate) {
+  candidate = candidate || {};
+  const provider = candidate.provider === 'apple' || candidate.source === 'apple'
+    ? 'apple'
+    : (candidate.provider === 'qq' || candidate.source === 'qq' ? 'qq' : 'netease');
+  return {
+    provider,
+    source: provider,
+    id: candidate.id == null ? '' : String(candidate.id),
+    mid: String(candidate.mid || candidate.songmid || '').trim(),
+    qqId: String(candidate.qqId || '').trim(),
+    name: String(candidate.name || candidate.title || '').trim(),
+    artist: String(candidate.artist || '').trim(),
+    album: String(candidate.album || '').trim(),
+    duration: Number(candidate.duration || candidate.dt || 0) || 0,
+    isrc: String(candidate.isrc || '').trim(),
+    storefront: String(candidate.storefront || '').trim().toLowerCase(),
+  };
+}
+
+function sanitizeLyricCacheSelection(selection) {
+  selection = selection || {};
+  return {
+    mode: selection.mode === 'manual' ? 'manual' : 'auto',
+    candidate: sanitizeLyricCacheCandidate(selection.candidate),
+    policy: String(selection.policy || '').slice(0, 160),
+  };
+}
+
+function sanitizeRomanizationLines(lines) {
+  return (Array.isArray(lines) ? lines : []).slice(0, 1200).map(line => {
+    line = line && typeof line === 'object' ? line : {};
+    const text = String(line.text || '').slice(0, 1000);
+    const timeline = (Array.isArray(line.karaokeTimeline) ? line.karaokeTimeline : [])
+      .slice(0, 500)
+      .map(node => {
+        node = node && typeof node === 'object' ? node : {};
+        return {
+          text:String(node.text || '').slice(0, 200),
+          start:Number(node.start) || 0,
+          duration:Math.max(0, Number(node.duration) || 0),
+          c0:Math.max(0, Number(node.c0) || 0),
+          c1:Math.max(0, Number(node.c1) || 0),
+          timed:node.timed === true,
+        };
+      });
+    return {
+      t:Number(line.t) || 0,
+      text,
+      source:String(line.source || '').slice(0, 40),
+      nativeQqKaraoke:line.nativeQqKaraoke === true,
+      karaokeTimeline:timeline,
+    };
+  }).filter(line => line.text);
+}
+
+function songLyricCachePayload(song, payload, selection) {
+  const clean = Object.assign({}, payload || {});
+  delete clean.cache;
+  delete clean.cacheSelection;
+  delete clean.songIdentity;
+  delete clean.roma;
+  delete clean.rawTtml;
+  clean.cacheSelection = sanitizeLyricCacheSelection(selection);
+  clean.songIdentity = lyricSongCacheIdentity(song);
+  return sanitizeCachedLyricPayload(clean);
 }
 
 function lyricCacheResponse(entry, hit) {
   if (!entry) return null;
-  return Object.assign({}, entry.payload || {}, { cache: Object.assign({}, entry.cache || {}, { hit: !!hit }) });
+  return Object.assign({}, entry.payload || {}, {
+    cache:Object.assign({}, entry.cache || {}, {
+      hit:!!hit,
+      stored:true,
+      romanizationEngineVersion:romanizationEngine.engineVersion,
+      romanizationSessionId,
+    }),
+  });
 }
 
-function writeLyricCache(key, payload) {
+function writeLyricCache(key, payload, options) {
+  payload = sanitizeCachedLyricPayload(payload);
   if (!lyricPayloadIsCacheable(payload)) return Object.assign({}, payload || {}, { cache: { hit: false, stored: false } });
-  const stored = lyricCache.set(key, payload);
+  const stored = lyricCache.set(key, payload, options || {});
   return stored ? lyricCacheResponse(stored, false) : Object.assign({}, payload, { cache: { hit: false, stored: false } });
 }
 
-function refreshLyricCacheInBackground(key, loader) {
+function refreshLyricCacheInBackground(key, expectedRevision, loader) {
   if (lyricCacheRefreshJobs.has(key)) return;
   const job = Promise.resolve()
     .then(loader)
-    .then(payload => { if (lyricPayloadIsCacheable(payload)) lyricCache.set(key, payload); })
+    .then(payload => {
+      payload = sanitizeCachedLyricPayload(payload);
+      if (lyricPayloadIsCacheable(payload)) lyricCache.setIfUnchanged(key, payload, expectedRevision);
+    })
     .catch(error => console.warn('[LyricCache] background refresh failed:', error.message))
     .finally(() => lyricCacheRefreshJobs.delete(key));
   lyricCacheRefreshJobs.set(key, job);
+}
+
+function refreshSongLyricTranslationInBackground(key, cached) {
+  const payload = cached && cached.payload;
+  const candidate = payload && payload.cacheSelection && payload.cacheSelection.candidate;
+  if (!candidate) return;
+  refreshLyricCacheInBackground(key, cached.cache.revision, async () => {
+    let refreshed = null;
+    if (candidate.provider === 'qq' && (candidate.mid || candidate.id || candidate.qqId)) {
+      refreshed = await handleQQLyric(candidate.mid, candidate.qqId || candidate.id);
+    } else if (candidate.provider === 'netease' && candidate.id) {
+      refreshed = await handleNeteaseLyric(candidate.id, userCookie);
+    }
+    const translation = String(refreshed && refreshed.tlyric || '').trim();
+    if (!translation) return payload;
+    return Object.assign({}, payload, {
+      tlyric: clearOpeningTranslationMetadata(translation),
+    });
+  });
 }
 
 async function handleNeteaseLyric(id, userCookie) {
@@ -3350,6 +3524,8 @@ const spotifyAuthState = new SpotifyAuthSession({
   store: spotifyAuthStore,
   redirectUri: `http://127.0.0.1:${PORT}/api/spotify/callback`,
 });
+const appleMusicAuthStore = global.__mineradioAppleMusicAuthStore || createMemoryAppleMusicAuthStore();
+const appleMusicLyricsProvider = new AppleMusicLyricsProvider({ store:appleMusicAuthStore });
 
 function escapeSpotifyCallbackText(value) {
   return String(value || '')
@@ -3371,32 +3547,33 @@ function sendSpotifyCallbackPage(res, ok, message) {
 }
 
 function spotifyRequestHasExpectedOrigin(req) {
-  return String(req.headers.origin || '') === `http://127.0.0.1:${PORT}`;
+  const origin = String(req.headers.origin || '').trim();
+  if (!origin) return false;
+  try {
+    const parsed = new URL(origin);
+    const hostname = String(parsed.hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+    const port = Number(parsed.port || (parsed.protocol === 'http:' ? 80 : parsed.protocol === 'https:' ? 443 : 0));
+    return parsed.protocol === 'http:' &&
+      port === Number(PORT) &&
+      (hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '::1');
+  } catch (error) {
+    return false;
+  }
 }
 
-function spotifyWebApiProxyTarget(url, method) {
-  const prefix = '/api/spotify/web-api';
-  const relative = url.pathname.startsWith(prefix) ? url.pathname.slice(prefix.length) : '';
-  const exactRoutes = new Map([
-    ['GET /me', '/v1/me'],
-    ['GET /me/player/currently-playing', '/v1/me/player/currently-playing'],
-    ['PUT /me/player/play', '/v1/me/player/play'],
-    ['PUT /me/player/pause', '/v1/me/player/pause'],
-    ['POST /me/player/next', '/v1/me/player/next'],
-    ['POST /me/player/previous', '/v1/me/player/previous'],
-  ]);
-  const exact = exactRoutes.get(`${method} ${relative}`);
-  if (exact) return exact;
-  if (method === 'GET' && relative === '/me/playlists') {
-    const limit = Math.max(1, Math.min(50, Number(url.searchParams.get('limit')) || 50));
-    return `/v1/me/playlists?limit=${limit}`;
+function localRequestHasExpectedOrigin(req) {
+  if (spotifyRequestHasExpectedOrigin(req)) return true;
+  const referer = String(req.headers.referer || '').trim();
+  if (referer) {
+    try {
+      const parsed = new URL(referer);
+      const hostname = String(parsed.hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+      const port = Number(parsed.port || (parsed.protocol === 'http:' ? 80 : 0));
+      if (parsed.protocol === 'http:' && port === Number(PORT)
+          && (hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '::1')) return true;
+    } catch (_) {}
   }
-  const playlistTracks = relative.match(/^\/playlists\/([A-Za-z0-9]+)\/tracks$/);
-  if (method === 'GET' && playlistTracks) {
-    const limit = Math.max(1, Math.min(100, Number(url.searchParams.get('limit')) || 100));
-    return `/v1/playlists/${playlistTracks[1]}/tracks?limit=${limit}`;
-  }
-  return '';
+  return String(req.headers['sec-fetch-site'] || '').toLowerCase() === 'same-origin';
 }
 
 async function proxySpotifyWebApi(req, res, url) {
@@ -3434,6 +3611,21 @@ async function proxySpotifyWebApi(req, res, url) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost:' + PORT);
   const pn = url.pathname;
+  if (SPOTIFY_ONLY_MODE) {
+    const policy = evaluateSpotifyOnlyRoute({
+      pathname: pn,
+      searchParams: url.searchParams,
+      method: req.method,
+    });
+    if (!policy.allowed) {
+      sendJSON(res, {
+        ok: false,
+        error: policy.error,
+        message: policy.message,
+      }, policy.status);
+      return;
+    }
+  }
 
   if (pn === '/api/spotify/login') {
     const clientId = url.searchParams.get('clientId');
@@ -3461,7 +3653,7 @@ const server = http.createServer(async (req, res) => {
     }
     try {
       await spotifyAuthState.completeAuthorization({ code, state });
-      sendSpotifyCallbackPage(res, true, '您可以关闭此窗口返回 Mineradio for Spotify。');
+      sendSpotifyCallbackPage(res, true, '您可以关闭此窗口返回 Better Radio。');
     } catch (err) {
       sendSpotifyCallbackPage(res, false, err.message || 'Authorization failed');
     }
@@ -3491,7 +3683,7 @@ const server = http.createServer(async (req, res) => {
   if (pn === '/api/app/version') {
     sendJSON(res, {
       name: APP_PACKAGE.name || 'mineradio',
-      productName: APP_PACKAGE.productName || 'Mineradio',
+      productName: APP_PACKAGE.productName || 'Better Radio',
       version: APP_VERSION,
       update: {
         provider: UPDATE_CONFIG.provider,
@@ -3699,19 +3891,9 @@ const server = http.createServer(async (req, res) => {
       const mid = url.searchParams.get('mid') || url.searchParams.get('songmid') || '';
       const id = url.searchParams.get('id') || url.searchParams.get('qqId') || '';
       if (!mid && !id) { sendJSON(res, { provider: 'qq', error: 'Missing QQ song mid or id', lyric: '' }, 400); return; }
-      const key = lyricCacheKey('qq', id, mid);
       const match = lyricMatchMetadataFromUrl(url);
-      const forceRefresh = url.searchParams.get('refresh') === '1';
-      const cached = lyricCache.get(key);
-      if (cached && !forceRefresh) {
-        if (lyricCache.shouldRefreshTranslation(cached)) {
-          refreshLyricCacheInBackground(key, async () => attachLyricMatchMetadata(await handleQQLyric(mid, id), match || cached.payload.match));
-        }
-        sendJSON(res, lyricCacheResponse(cached, true));
-        return;
-      }
       const data = attachLyricMatchMetadata(await handleQQLyric(mid, id), match);
-      sendJSON(res, writeLyricCache(key, data));
+      sendJSON(res, Object.assign({}, data, { cache: { hit: false, stored: false } }));
     } catch (err) {
       console.error('[QQLyric]', err);
       sendJSON(res, { provider: 'qq', error: err.message, lyric: '' }, 500);
@@ -4242,7 +4424,220 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ---------- Apple Music TTML 歌词源 ----------
+  if (pn === '/api/apple-music/lyrics/auth/status') {
+    if (req.method !== 'GET') { sendJSON(res, { error:'Method not allowed' }, 405); return; }
+    if (!localRequestHasExpectedOrigin(req)) { sendJSON(res, { error:'ORIGIN_REJECTED' }, 403); return; }
+    sendJSON(res, appleMusicLyricsProvider.status());
+    return;
+  }
+
+  if (pn === '/api/apple-music/lyrics/auth') {
+    if (!localRequestHasExpectedOrigin(req)) { sendJSON(res, { error:'ORIGIN_REJECTED' }, 403); return; }
+    try {
+      if (req.method === 'PUT') {
+        const body = await readRequestBody(req);
+        sendJSON(res, await appleMusicLyricsProvider.validateAndSave({
+          mediaUserToken:String(body.mediaUserToken || ''),
+          storefrontOverride:String(body.storefrontOverride || ''),
+        }));
+        return;
+      }
+      if (req.method === 'DELETE') {
+        sendJSON(res, appleMusicLyricsProvider.clear());
+        return;
+      }
+      sendJSON(res, { error:'Method not allowed' }, 405);
+    } catch (error) {
+      const status = Math.max(400, Math.min(599, Number(error && error.status) || 502));
+      sendJSON(res, { error:String(error && error.code || 'APPLE_MUSIC_AUTH_FAILED'), message:String(error && error.message || 'Apple Music auth failed') }, status);
+    }
+    return;
+  }
+
+  if (pn === '/api/apple-music/lyrics/auth/test') {
+    if (req.method !== 'POST') { sendJSON(res, { error:'Method not allowed' }, 405); return; }
+    if (!localRequestHasExpectedOrigin(req)) { sendJSON(res, { error:'ORIGIN_REJECTED' }, 403); return; }
+    try {
+      sendJSON(res, await appleMusicLyricsProvider.validateStored());
+    } catch (error) {
+      const status = Math.max(400, Math.min(599, Number(error && error.status) || 502));
+      sendJSON(res, { error:String(error && error.code || 'APPLE_MUSIC_AUTH_FAILED'), message:String(error && error.message || 'Apple Music auth failed') }, status);
+    }
+    return;
+  }
+
+  if (pn === '/api/apple-music/lyrics/search') {
+    if (req.method !== 'GET') { sendJSON(res, { error:'Method not allowed' }, 405); return; }
+    if (!localRequestHasExpectedOrigin(req)) { sendJSON(res, { error:'ORIGIN_REJECTED' }, 403); return; }
+    try {
+      const songs = await appleMusicLyricsProvider.search({
+        term:String(url.searchParams.get('term') || ''),
+        limit:Number(url.searchParams.get('limit')) || 12,
+      });
+      sendJSON(res, { songs, status:appleMusicLyricsProvider.status() });
+    } catch (error) {
+      const status = Math.max(400, Math.min(599, Number(error && error.status) || 502));
+      sendJSON(res, { error:String(error && error.code || 'APPLE_MUSIC_SEARCH_FAILED'), songs:[] }, status);
+    }
+    return;
+  }
+
+  if (pn === '/api/apple-music/lyrics') {
+    if (req.method !== 'GET') { sendJSON(res, { error:'Method not allowed' }, 405); return; }
+    if (!localRequestHasExpectedOrigin(req)) { sendJSON(res, { error:'ORIGIN_REJECTED' }, 403); return; }
+    try {
+      const id = String(url.searchParams.get('id') || '').trim();
+      if (!id) { sendJSON(res, { error:'Missing Apple Music song id' }, 400); return; }
+      const match = lyricMatchMetadataFromUrl(url) || {};
+      match.id = id;
+      match.isrc = String(url.searchParams.get('isrc') || '');
+      match.storefront = String(url.searchParams.get('storefront') || '');
+      sendJSON(res, await appleMusicLyricsProvider.lyrics({ id, storefront:match.storefront, match }));
+    } catch (error) {
+      const status = Math.max(400, Math.min(599, Number(error && error.status) || 502));
+      sendJSON(res, { error:String(error && error.code || 'APPLE_MUSIC_LYRIC_FAILED'), message:String(error && error.message || 'Apple Music lyric request failed') }, status);
+    }
+    return;
+  }
+
   // ---------- 歌词 ----------
+  if (pn === '/api/lyric/romanize') {
+    if (req.method !== 'POST') {
+      sendJSON(res, { error:'Method not allowed' }, 405);
+      return;
+    }
+    if (!spotifyRequestHasExpectedOrigin(req)) {
+      sendJSON(res, { error:'ORIGIN_REJECTED' }, 403);
+      return;
+    }
+    try {
+      const body = await readRequestBody(req);
+      const lines = sanitizeRomanizationLines(body.lines);
+      const languageHint = body.languageHint === 'ja' || body.languageHint === 'ko'
+        ? body.languageHint
+        : '';
+      sendJSON(res, Object.assign(
+        await romanizationEngine.romanizeLines(lines, { languageHint }),
+        { sessionId:romanizationSessionId }
+      ));
+    } catch (error) {
+      console.warn('[Romanization] generation failed:', error.message);
+      sendJSON(res, {
+        engineVersion:romanizationEngine.engineVersion,
+        language:'',
+        lines:[],
+        sessionId:romanizationSessionId,
+        failure:{
+          retryable:true,
+          sessionId:romanizationSessionId,
+          message:String(error.message || 'Romanization failed'),
+        },
+      });
+    }
+    return;
+  }
+
+  if (pn === '/api/lyric/cache/song') {
+    try {
+      if (req.method === 'GET') {
+        const song = sanitizeLyricCacheSong(lyricMatchMetadataFromUrl(url) || {});
+        const key = lyricSongCacheKey(song);
+        if (!key) { sendJSON(res, { error: 'Missing song identity', cache: { hit: false, stored: false } }, 400); return; }
+        const cached = lyricCache.get(key);
+        if (!cached) { sendJSON(res, { cache: { key, hit: false, stored: false } }); return; }
+        if (lyricCache.shouldRefreshTranslation(cached)) refreshSongLyricTranslationInBackground(key, cached);
+        sendJSON(res, lyricCacheResponse(cached, true));
+        return;
+      }
+      if (req.method === 'POST') {
+        if (!spotifyRequestHasExpectedOrigin(req)) {
+          sendJSON(res, { error: 'ORIGIN_REJECTED' }, 403);
+          return;
+        }
+        const body = await readRequestBody(req);
+        const song = sanitizeLyricCacheSong(body.song);
+        const key = lyricSongCacheKey(song);
+        if (!key) { sendJSON(res, { error: 'Missing song identity' }, 400); return; }
+        const payload = songLyricCachePayload(song, body.payload, body.selection);
+        if (!lyricPayloadIsCacheable(payload)) { sendJSON(res, { error: 'Empty lyric payload' }, 400); return; }
+        const current = lyricCache.get(key);
+        const currentMode = current && current.payload && current.payload.cacheSelection && current.payload.cacheSelection.mode;
+        if (payload.cacheSelection.mode === 'auto' && currentMode === 'manual' && body.replaceManual !== true) {
+          sendJSON(res, { error: 'MANUAL_LYRIC_CACHE_LOCKED' }, 409);
+          return;
+        }
+        if (body.replaceManual === true && current && Number(body.expectedRevision) !== Number(current.cache.revision)) {
+          sendJSON(res, { error: 'STALE_LYRIC_CACHE_REVISION', cache: current.cache }, 409);
+          return;
+        }
+        const rawTtml = payload.provider === 'apple'
+          ? String(body.payload && body.payload.rawTtml || '')
+          : '';
+        sendJSON(res, writeLyricCache(key, payload, { rawTtml }));
+        return;
+      }
+      if (req.method === 'PATCH') {
+        if (!spotifyRequestHasExpectedOrigin(req)) {
+          sendJSON(res, { error:'ORIGIN_REJECTED' }, 403);
+          return;
+        }
+        const body = await readRequestBody(req);
+        const song = sanitizeLyricCacheSong(body.song);
+        const key = lyricSongCacheKey(song);
+        const current = key ? lyricCache.get(key) : null;
+        if (!key || !current) {
+          sendJSON(res, { error:'LYRIC_CACHE_MISS' }, 404);
+          return;
+        }
+        const expectedRevision = Number(body.expectedRevision) || 0;
+        if (expectedRevision !== Number(current.cache.revision || 0)) {
+          sendJSON(res, { error:'STALE_LYRIC_CACHE_REVISION', cache:current.cache }, 409);
+          return;
+        }
+        const romanization = body.romanization && typeof body.romanization === 'object'
+          ? body.romanization
+          : null;
+        if (!romanization) {
+          sendJSON(res, { error:'Missing romanization payload' }, 400);
+          return;
+        }
+        const nextPayload = Object.assign({}, current.payload, { romanization });
+        delete nextPayload.roma;
+        const stored = lyricCache.setIfUnchanged(key, nextPayload, expectedRevision);
+        if (!stored) {
+          sendJSON(res, { error:'STALE_LYRIC_CACHE_REVISION' }, 409);
+          return;
+        }
+        sendJSON(res, lyricCacheResponse(stored, false));
+        return;
+      }
+      if (req.method === 'DELETE') {
+        if (!spotifyRequestHasExpectedOrigin(req)) {
+          sendJSON(res, { error: 'ORIGIN_REJECTED' }, 403);
+          return;
+        }
+        const body = await readRequestBody(req);
+        const song = sanitizeLyricCacheSong(body.song);
+        const key = lyricSongCacheKey(song);
+        if (!key) { sendJSON(res, { error: 'Missing song identity' }, 400); return; }
+        const current = lyricCache.get(key);
+        const expectedRevision = Number(body.expectedRevision) || 0;
+        if (current && expectedRevision !== Number(current.cache.revision || 0)) {
+          sendJSON(res, { error: 'STALE_LYRIC_CACHE_REVISION', cache: current.cache }, 409);
+          return;
+        }
+        sendJSON(res, { ok:true, removed:lyricCache.remove(key) });
+        return;
+      }
+      sendJSON(res, { error: 'Method not allowed' }, 405);
+    } catch (err) {
+      console.error('[SongLyricCache]', err);
+      sendJSON(res, { error: err.message }, 500);
+    }
+    return;
+  }
+
   if (pn === '/api/lyric/cache/status') {
     sendJSON(res, lyricCache.status());
     return;
@@ -4261,19 +4656,9 @@ const server = http.createServer(async (req, res) => {
     try {
       const id = url.searchParams.get('id');
       if (!id) { sendJSON(res, { error: 'Missing song id', lyric: '' }, 400); return; }
-      const key = lyricCacheKey('netease', id);
       const match = lyricMatchMetadataFromUrl(url);
-      const forceRefresh = url.searchParams.get('refresh') === '1';
-      const cached = lyricCache.get(key);
-      if (cached && !forceRefresh) {
-        if (lyricCache.shouldRefreshTranslation(cached)) {
-          refreshLyricCacheInBackground(key, async () => attachLyricMatchMetadata(await handleNeteaseLyric(id, userCookie), match || cached.payload.match));
-        }
-        sendJSON(res, lyricCacheResponse(cached, true));
-        return;
-      }
       const data = attachLyricMatchMetadata(await handleNeteaseLyric(id, userCookie), match);
-      sendJSON(res, writeLyricCache(key, data));
+      sendJSON(res, Object.assign({}, data, { cache: { hit: false, stored: false } }));
     } catch (err) {
       console.error('[Lyric]', err);
       sendJSON(res, { error: err.message, lyric: '' }, 500);

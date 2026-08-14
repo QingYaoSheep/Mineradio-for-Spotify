@@ -50,4 +50,15 @@ screenshots/
 
 # Local agent and conversation context
 .agents/
+.codex/
+AGENTS.md
+AI_HANDOFF.md
 Chat_History.md
+Chat_history.md
+chat_history.md
+docs/HANDOFF*.md
+docs/PROJECT_MEMORY.md
+docs/*_MEMORY.md
+
+# Local investigation worktrees and scratch directories
+.tmp-*/

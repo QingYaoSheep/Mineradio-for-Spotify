@@ -1,9 +1,8 @@
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const vm = require('node:vm');
+const { readRendererSource } = require('./renderer-source');
 
-const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+const html = readRendererSource();
 
 function functionSource(marker) {
   const start = html.indexOf(marker);
@@ -69,16 +68,27 @@ async function verifySpotifyPlaylistMetadata() {
     refreshSpotifyLoginStatus: async () => ({ loggedIn: true }),
     spotifyApi: async (url) => {
       playlistCalls.push({ kind: 'proxy', url });
+      const offset = Number(new URL(url, 'https://example.test').searchParams.get('offset') || 0);
       return {
       ok: true,
-      json: async () => ({
+      json: async () => offset === 0 ? ({
         items: [{
           id: 'playlist-1',
-          name: 'Spotify playlist',
+          name: 'Spotify playlist 1',
           images: [{ url: 'https://example.test/playlist.jpg' }],
-          tracks: { total: 42 },
+          items: { total: 42 },
           owner: { display_name: 'Spotify owner' },
         }],
+        next: 'https://api.spotify.com/v1/me/playlists?offset=50',
+      }) : ({
+        items: [{
+          id: 'playlist-2',
+          name: 'Spotify playlist 2',
+          images: [],
+          items: { total: 7 },
+          owner: { display_name: 'Spotify owner' },
+        }],
+        next: null,
       }),
     };
     },
@@ -95,20 +105,38 @@ async function verifySpotifyPlaylistMetadata() {
     scheduleShelfRebuild() {},
     console,
     Number,
+    URL,
   };
   vm.createContext(context);
   vm.runInContext(`${functionSource('async function refreshUserPlaylists(force)')}; this.refresh = refreshUserPlaylists;`, context);
   await context.refresh(true);
   assert.deepEqual(JSON.parse(JSON.stringify(context.userPlaylists)), [{
     id: 'playlist-1',
-    name: 'Spotify playlist',
+    name: 'Spotify playlist 1',
     cover: 'https://example.test/playlist.jpg',
     playCount: 0,
     trackCount: 42,
     creator: 'Spotify owner',
+    ownerId: '',
+    canEdit: false,
+    provider: 'spotify',
+    source: 'spotify',
+  }, {
+    id: 'playlist-2',
+    name: 'Spotify playlist 2',
+    cover: '',
+    playCount: 0,
+    trackCount: 7,
+    creator: 'Spotify owner',
+    ownerId: '',
+    canEdit: false,
     provider: 'spotify',
     source: 'spotify',
   }], 'Spotify playlist metadata must preserve its provider and real track count for the shelf');
+  assert.deepEqual(playlistCalls.filter(call => call.kind === 'proxy').map(call => call.url), [
+    '/me/playlists?limit=50&offset=0',
+    '/me/playlists?limit=50&offset=50',
+  ]);
   assert.match(html, /sourceLabel\s*=\s*provider === 'qq' \? 'QQ' : \(provider === 'spotify' \? 'SPOTIFY'/,
     'The 3D shelf must label Spotify playlists as Spotify');
 }

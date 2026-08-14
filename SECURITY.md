@@ -6,7 +6,7 @@
 
 ## Installer Safety Notice
 
-`v1.0.10` 及更早旧安装包不再建议继续安装或传播。请将旧 `.exe` 安装包视为不可信历史产物并隔离保留；需要安装 Mineradio for Spotify 时，请使用 `v1.1.0` 或更新版本的 GitHub Release 安装包。
+`v1.0.10` 及更早 Mineradio 安装包不再建议继续安装或传播。Better Radio 请只使用 `v2.0.0` 或更新版本的 GitHub Release 安装包。
 
 `v1.1.0` 不作为 `v1.0.10` 的软件内本地更新包发布。旧版本用户请手动下载新版安装包，卸载旧版本后进行纯净安装。
 
@@ -18,15 +18,18 @@
 
 ## Sensitive Data
 
-Mineradio for Spotify 不应收集或上传用户 Cookie、Spotify Client Secret 或 OAuth Token。用户登录状态应保存在本地用户数据目录中。
+Better Radio 不应收集或上传用户 Cookie、Spotify Client Secret 或 OAuth Token。用户登录状态只保存在独立的 Better Radio 本地用户数据目录中。
 
 Spotify 桌面授权使用 Authorization Code with PKCE，不接受 Client Secret。refresh token 必须通过 Electron `safeStorage` 加密保存；access token 只允许存在于主进程内存，不得返回渲染页面。Spotify Web API 代理默认只监听 `127.0.0.1`，写操作必须通过同源校验。
+
+可选的 Apple Music TTML 歌词源只接受用户手动提供的 `media-user-token`。该 Token 由 Electron 主进程使用 `safeStorage` 加密后写入 `userData`，禁止进入仓库、前端 `localStorage`、日志、URL、歌词缓存或本地 API 响应；渲染进程只能读取脱敏后的配置与验证状态。Apple Music Bearer Token 仅在主进程内存中短期缓存，凭据管理接口和歌词接口均执行本地同源校验。
 
 如果你要提交问题反馈，请先确认没有附带：
 
 - `.cookie`
 - `.qq-cookie`
 - `.spotify-auth`
+- `.apple-music-lyrics-auth.enc`
 - 本地音乐文件
 - 用户账号截图
 - 调试日志中的 Cookie、Token 或隐私路径

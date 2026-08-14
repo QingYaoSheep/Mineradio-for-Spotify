@@ -29,13 +29,13 @@ assert.deepEqual(
     lrc_t: 0,
     qrc: 1,
     qrc_t: 0,
-    roma: 1,
+    roma: 0,
     roma_t: 0,
     trans: 1,
     trans_t: 0,
     type: -1,
   },
-  'QQ lyric requests must explicitly ask for encrypted QRC, translation and romanization',
+  'QQ lyric requests must ask for encrypted QRC and translation without using remote romanization',
 );
 
 assert.deepEqual(

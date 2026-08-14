@@ -1,9 +1,18 @@
-const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog, desktopCapturer, safeStorage } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog, desktopCapturer, safeStorage, protocol } = require('electron');
 const net = require('net');
 const path = require('path');
 const fs = require('fs');
 const { execFile, spawn } = require('child_process');
 const { SpotifySecureAuthStore } = require('../spotify-secure-auth-store');
+const { AppleMusicSecureAuthStore } = require('../apple-music-secure-auth-store');
+const { runV2UserDataMigration, saveV2SettingsSnapshot } = require('../user-data-migration');
+const appMemory = require('./app-memory');
+const {
+  WallpaperEngineLibrary,
+  registerWallpaperEngineScheme,
+} = require('./wallpaper-engine-library');
+const { WallpaperEngineRuntime } = require('./wallpaper-engine-runtime');
+const { DesktopWallpaperRuntime } = require('./wallpaper-mode-runtime');
 
 let mainWindow = null;
 let localServer = null;
@@ -18,7 +27,6 @@ let desktopLyricsMousePoller = null;
 let desktopLyricsMousePollerBuffer = '';
 let desktopLyricsHotBounds = null;
 let desktopLyricsLastMiddleAt = 0;
-let wallpaperWindow = null;
 let wallpaperState = {};
 let htmlFullscreenActive = false;
 let windowFullscreenActive = false;
@@ -30,34 +38,68 @@ const WINDOWED_SCALE = 3 / 4;
 const WINDOWED_MARGIN = 32;
 const MIN_WINDOWED_WIDTH = 960;
 const MIN_WINDOWED_HEIGHT = 540;
-const APP_NAME = 'Mineradio for Spotify';
-const LEGACY_USER_DATA_NAME = 'Mineradio';
-const APP_USER_MODEL_ID = 'com.mineradio.desktop';
+const APP_NAME = 'Better Radio';
+const APP_USER_DATA_NAME = 'Better Radio';
+const APP_USER_MODEL_ID = 'com.betterradio.desktop';
 const APP_ICON_ICO = path.join(__dirname, '..', 'build', 'icon.ico');
-const NETEASE_LOGIN_PARTITION = 'persist:mineradio-netease-login';
+const V2_PREVIEW_MIGRATION_VERSION = '2.0.0-preview.1';
+const NETEASE_LOGIN_PARTITION = 'persist:better-radio-netease-login';
 const NETEASE_LOGIN_URL = 'https://music.163.com/#/login';
-const QQ_LOGIN_PARTITION = 'persist:mineradio-qqmusic-login';
+const QQ_LOGIN_PARTITION = 'persist:better-radio-qqmusic-login';
 const QQ_LOGIN_URL = 'https://y.qq.com/n/ryqq/profile';
 
-const CHROMIUM_PERFORMANCE_SWITCHES = [
+const CHROMIUM_SAFE_PERFORMANCE_SWITCHES = [
   ['autoplay-policy', 'no-user-gesture-required'],
-  ['ignore-gpu-blocklist'],
   ['enable-gpu-rasterization'],
   ['enable-oop-rasterization'],
   ['enable-zero-copy'],
   ['enable-accelerated-2d-canvas'],
-  ['disable-background-timer-throttling'],
-  ['disable-renderer-backgrounding'],
-  ['disable-backgrounding-occluded-windows'],
-  ['force_high_performance_gpu'],
   ['use-angle', 'd3d11'],
 ];
-app.setName(APP_NAME);
-// Keep the historical data directory so the rebrand does not sign users out or reset settings.
-app.setPath('userData', path.join(app.getPath('appData'), LEGACY_USER_DATA_NAME));
-if (process.platform === 'win32') app.setAppUserModelId(APP_USER_MODEL_ID);
 
-for (const [name, value] of CHROMIUM_PERFORMANCE_SWITCHES) {
+const CHROMIUM_OPT_IN_PERFORMANCE_SWITCHES = [
+  ['ignore-gpu-blocklist', null, 'MINERADIO_IGNORE_GPU_BLOCKLIST'],
+  ['force_high_performance_gpu', null, 'MINERADIO_FORCE_HIGH_PERFORMANCE_GPU'],
+  ['disable-background-timer-throttling', null, 'MINERADIO_KEEP_BACKGROUND_RENDERING'],
+  ['disable-renderer-backgrounding', null, 'MINERADIO_KEEP_BACKGROUND_RENDERING'],
+  ['disable-backgrounding-occluded-windows', null, 'MINERADIO_KEEP_BACKGROUND_RENDERING'],
+];
+app.setName(APP_NAME);
+const isolatedTestUserData = process.env.MINERADIO_TEST_MODE === '1'
+  && path.isAbsolute(String(process.env.MINERADIO_TEST_USER_DATA || ''))
+  ? path.resolve(process.env.MINERADIO_TEST_USER_DATA)
+  : '';
+app.setPath('userData', isolatedTestUserData || path.join(app.getPath('appData'), APP_USER_DATA_NAME));
+if (process.platform === 'win32') app.setAppUserModelId(APP_USER_MODEL_ID);
+registerWallpaperEngineScheme(protocol);
+const wallpaperEngineLibrary = new WallpaperEngineLibrary({
+  userDataPath: app.getPath('userData'),
+});
+const wallpaperEngineRuntime = new WallpaperEngineRuntime({
+  library: wallpaperEngineLibrary,
+  desktopCapturer,
+  nativeTempPath: path.join(app.getPath('userData'), 'wallpaper-engine-runtime'),
+});
+const desktopWallpaperRuntime = new DesktopWallpaperRuntime({
+  BrowserWindow,
+  screen,
+  platform: process.platform,
+  preloadPath: path.join(__dirname, 'overlay-preload.js'),
+  overlayUrl: () => overlayUrl('wallpaper.html'),
+  execFileImpl: execFile,
+  onStatus: (status) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.webContents.send('mineradio-wallpaper-runtime-state', status);
+  },
+});
+
+for (const [name, value] of CHROMIUM_SAFE_PERFORMANCE_SWITCHES) {
+  if (value == null) app.commandLine.appendSwitch(name);
+  else app.commandLine.appendSwitch(name, value);
+}
+
+for (const [name, value, environmentFlag] of CHROMIUM_OPT_IN_PERFORMANCE_SWITCHES) {
+  if (process.env[environmentFlag] !== '1') continue;
   if (value == null) app.commandLine.appendSwitch(name);
   else app.commandLine.appendSwitch(name, value);
 }
@@ -294,7 +336,7 @@ function ensureDesktopShortcut() {
       target,
       cwd: path.dirname(target),
       args: '',
-      description: 'Mineradio for Spotify desktop music visualizer',
+      description: 'Better Radio desktop Spotify stage visualizer',
       icon: fs.existsSync(APP_ICON_ICO) ? APP_ICON_ICO : target,
       iconIndex: 0,
       appUserModelId: APP_USER_MODEL_ID,
@@ -623,6 +665,19 @@ async function clearNeteaseMusicLoginSession() {
   return { ok: true };
 }
 
+async function clearLegacyProviderSessions() {
+  const results = await Promise.allSettled(
+    [NETEASE_LOGIN_PARTITION, QQ_LOGIN_PARTITION].map((partition) => {
+      return session.fromPartition(partition).clearStorageData({
+        storages: ['cookies', 'localstorage', 'indexdb', 'cachestorage', 'serviceworkers'],
+      });
+    })
+  );
+  if (results.some(result => result.status === 'rejected')) {
+    console.warn('[Migration] Some legacy provider session data could not be cleared.');
+  }
+}
+
 function getWindowedBounds(win) {
   const display = win && !win.isDestroyed()
     ? screen.getDisplayMatching(win.getBounds())
@@ -936,13 +991,13 @@ function createDesktopLyricsWindow(payload = {}) {
     focusable: false,
     skipTaskbar: true,
     show: false,
-    title: 'Mineradio for Spotify · Desktop Lyrics',
+    title: 'Better Radio · Desktop Lyrics',
     webPreferences: {
       preload: path.join(__dirname, 'overlay-preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      backgroundThrottling: false,
+      backgroundThrottling: process.env.MINERADIO_KEEP_BACKGROUND_RENDERING !== '1',
     },
   });
   try {
@@ -983,120 +1038,29 @@ function closeDesktopLyricsWindow() {
   broadcastDesktopLyricsEnabledState(false);
 }
 
-function nativeWindowHandleDecimal(win) {
-  const handle = win.getNativeWindowHandle();
-  if (process.arch === 'x64') return handle.readBigUInt64LE(0).toString();
-  return String(handle.readUInt32LE(0));
-}
-
-function attachWallpaperToWorkerW(win) {
-  if (process.platform !== 'win32' || !win || win.isDestroyed()) return;
-  const hwnd = nativeWindowHandleDecimal(win);
-  const script = `
-$ErrorActionPreference = "Stop"
-if (-not ("MineradioNativeWin" -as [type])) {
-Add-Type @"
-using System;
-using System.Runtime.InteropServices;
-public class MineradioNativeWin {
-  public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
-  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
-  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr FindWindowEx(IntPtr parent, IntPtr childAfter, string className, string windowName);
-  [DllImport("user32.dll", SetLastError=true)] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
-  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr SetParent(IntPtr hWndChild, IntPtr hWndNewParent);
-  [DllImport("user32.dll", SetLastError=true)] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
-  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam, uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
-}
-"@
-}
-$progman = [MineradioNativeWin]::FindWindow("Progman", $null)
-$result = [IntPtr]::Zero
-[MineradioNativeWin]::SendMessageTimeout($progman, 0x052C, [IntPtr]::Zero, [IntPtr]::Zero, 0, 1000, [ref]$result) | Out-Null
-$script:workerw = [IntPtr]::Zero
-$enum = [MineradioNativeWin+EnumWindowsProc]{
-  param([IntPtr]$top, [IntPtr]$param)
-  $shell = [MineradioNativeWin]::FindWindowEx($top, [IntPtr]::Zero, "SHELLDLL_DefView", $null)
-  if ($shell -ne [IntPtr]::Zero) {
-    $script:workerw = [MineradioNativeWin]::FindWindowEx([IntPtr]::Zero, $top, "WorkerW", $null)
-  }
-  return $true
-}
-[MineradioNativeWin]::EnumWindows($enum, [IntPtr]::Zero) | Out-Null
-if ($script:workerw -eq [IntPtr]::Zero) { $script:workerw = $progman }
-$target = [IntPtr]::new([Int64]${hwnd})
-[MineradioNativeWin]::SetParent($target, $script:workerw) | Out-Null
-[MineradioNativeWin]::SetWindowPos($target, [IntPtr]::Zero, 0, 0, 0, 0, 0x0013) | Out-Null
-`;
-  execFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], {
-    windowsHide: true,
-    timeout: 5000,
-  }, (error) => {
-    if (error) console.warn('Wallpaper WorkerW attach failed:', error.message);
-  });
-}
-
 function positionWallpaperWindow() {
-  if (!wallpaperWindow || wallpaperWindow.isDestroyed()) return;
-  const bounds = screen.getPrimaryDisplay().bounds;
-  wallpaperWindow.setBounds(bounds, false);
+  if (!desktopWallpaperRuntime.getStatus('display-change').enabled) return;
+  desktopWallpaperRuntime.reconcileDisplay('display-change').catch((error) => {
+    console.warn('Wallpaper display reconcile failed:', error && error.message || error);
+  });
 }
 
 function sendWallpaperState() {
-  if (!wallpaperWindow || wallpaperWindow.isDestroyed()) return;
-  wallpaperWindow.webContents.send('mineradio-wallpaper-state', wallpaperState);
+  if (!desktopWallpaperRuntime.getStatus('state-update').enabled) return;
+  desktopWallpaperRuntime.update(wallpaperState).catch((error) => {
+    console.warn('Wallpaper state update failed:', error && error.message || error);
+  });
 }
 
-function createWallpaperWindow(payload = {}) {
+async function createWallpaperWindow(payload = {}) {
   wallpaperState = { ...wallpaperState, ...payload, enabled: true };
-  if (wallpaperWindow && !wallpaperWindow.isDestroyed()) {
-    positionWallpaperWindow();
-    sendWallpaperState();
-    return wallpaperWindow;
-  }
-  const bounds = screen.getPrimaryDisplay().bounds;
-  wallpaperWindow = new BrowserWindow({
-    ...bounds,
-    frame: false,
-    transparent: false,
-    backgroundColor: '#050608',
-    hasShadow: false,
-    resizable: false,
-    movable: false,
-    focusable: false,
-    skipTaskbar: true,
-    show: false,
-    title: 'Mineradio for Spotify · Wallpaper',
-    webPreferences: {
-      preload: path.join(__dirname, 'overlay-preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false,
-      backgroundThrottling: false,
-    },
-  });
-  wallpaperWindow.setIgnoreMouseEvents(true, { forward: true });
-  wallpaperWindow.once('ready-to-show', () => {
-    if (!wallpaperWindow || wallpaperWindow.isDestroyed()) return;
-    positionWallpaperWindow();
-    wallpaperWindow.showInactive();
-    attachWallpaperToWorkerW(wallpaperWindow);
-    sendWallpaperState();
-  });
-  wallpaperWindow.webContents.once('did-finish-load', sendWallpaperState);
-  wallpaperWindow.on('closed', () => {
-    wallpaperWindow = null;
-  });
-  wallpaperWindow.loadURL(overlayUrl('wallpaper.html')).catch((e) => console.warn('Wallpaper load failed:', e.message));
-  return wallpaperWindow;
+  return desktopWallpaperRuntime.start(wallpaperState);
 }
 
-function closeWallpaperWindow() {
+async function closeWallpaperWindow(reason = 'renderer-disabled') {
   wallpaperState = { ...wallpaperState, enabled: false };
-  if (wallpaperWindow && !wallpaperWindow.isDestroyed()) {
-    sendWallpaperState();
-    wallpaperWindow.close();
-  }
-  wallpaperWindow = null;
+  const result = await desktopWallpaperRuntime.stop(reason);
+  return result;
 }
 
 function closeOverlayWindows() {
@@ -1141,7 +1105,7 @@ ipcMain.handle('mineradio-export-json-file', async (event, payload = {}) => {
     const owner = getSenderWindow(event);
     const defaultName = String(payload.defaultName || 'mineradio-export.json').replace(/[\\/:*?"<>|]+/g, '-');
     const result = await dialog.showSaveDialog(owner, {
-    title: '导出 Mineradio for Spotify 存档',
+    title: '导出 Better Radio 存档',
       defaultPath: defaultName.toLowerCase().endsWith('.json') ? defaultName : `${defaultName}.json`,
       filters: [{ name: 'JSON', extensions: ['json'] }],
     });
@@ -1158,7 +1122,7 @@ ipcMain.handle('mineradio-import-json-file', async (event) => {
   try {
     const owner = getSenderWindow(event);
     const result = await dialog.showOpenDialog(owner, {
-      title: '导入 Mineradio for Spotify 存档',
+      title: '导入 Better Radio 存档',
       properties: ['openFile'],
       filters: [{ name: 'JSON', extensions: ['json'] }],
     });
@@ -1169,6 +1133,13 @@ ipcMain.handle('mineradio-import-json-file', async (event) => {
   } catch (e) {
     return { ok: false, error: e.message || 'IMPORT_FAILED' };
   }
+});
+
+ipcMain.handle('mineradio-migration-save-settings-snapshot', async (_event, values) => {
+  return saveV2SettingsSnapshot({
+    userDataPath: app.getPath('userData'),
+    values,
+  });
 });
 
 ipcMain.handle('netease-music-open-login', async (event) => {
@@ -1199,6 +1170,20 @@ ipcMain.handle('mineradio-open-update-installer', async (_event, filePath) => {
     return error ? { ok: false, error } : { ok: true };
   } catch (e) {
     return { ok: false, error: e.message || 'OPEN_UPDATE_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-open-spotify-app', async () => {
+  try {
+    await shell.openExternal('spotify:');
+    return { ok: true };
+  } catch (error) {
+    try {
+      await shell.openExternal('https://open.spotify.com/');
+      return { ok: true, webFallback: true };
+    } catch (fallbackError) {
+      return { ok: false, error: fallbackError.message || error.message || 'SPOTIFY_OPEN_FAILED' };
+    }
   }
 });
 
@@ -1302,30 +1287,217 @@ ipcMain.handle('mineradio-desktop-lyrics-move-by', async (_event, dx, dy) => {
 
 ipcMain.handle('mineradio-wallpaper-set-enabled', async (_event, enabled, payload) => {
   try {
-    if (enabled) createWallpaperWindow(payload || {});
-    else closeWallpaperWindow();
-    return { ok: true };
+    if (enabled) return await createWallpaperWindow(payload || {});
+    return await closeWallpaperWindow('renderer-disabled');
   } catch (e) {
-    return { ok: false, error: e.message || 'WALLPAPER_FAILED' };
+    return { ok: false, enabled: false, error: e.message || 'WALLPAPER_FAILED' };
   }
 });
 
 ipcMain.handle('mineradio-wallpaper-update', async (_event, payload) => {
   try {
     wallpaperState = { ...wallpaperState, ...(payload || {}) };
-    if (wallpaperState.enabled) {
-      createWallpaperWindow(wallpaperState);
-      if (wallpaperWindow && !wallpaperWindow.isDestroyed()) {
-        positionWallpaperWindow();
-        sendWallpaperState();
-      }
-    } else if (wallpaperWindow && !wallpaperWindow.isDestroyed()) {
-      sendWallpaperState();
-    }
-    return { ok: true };
+    return await desktopWallpaperRuntime.update(wallpaperState);
   } catch (e) {
-    return { ok: false, error: e.message || 'WALLPAPER_UPDATE_FAILED' };
+    return { ok: false, enabled: false, error: e.message || 'WALLPAPER_UPDATE_FAILED' };
   }
+});
+
+function isTrustedMainWindowEvent(event) {
+  return !!event && !!mainWindow && !mainWindow.isDestroyed() && getSenderWindow(event) === mainWindow;
+}
+
+function nativeWindowHandleString(window) {
+  if (!window || window.isDestroyed() || process.platform !== 'win32') return '';
+  try {
+    const buffer = window.getNativeWindowHandle();
+    if (!buffer || !buffer.length) return '';
+    return buffer.length >= 8
+      ? buffer.readBigUInt64LE(0).toString()
+      : String(buffer.readUInt32LE(0));
+  } catch (_) {
+    return '';
+  }
+}
+
+ipcMain.handle('mineradio-wallpaper-engine-list', async (event, payload = {}) => {
+  if (!isTrustedMainWindowEvent(event)) {
+    return { ok: false, projects: [], count: 0, error: 'WALLPAPER_ENGINE_UNTRUSTED_CALLER' };
+  }
+  try {
+    return await wallpaperEngineLibrary.list({ force: payload && payload.force === true });
+  } catch (error) {
+    return { ok: false, projects: [], count: 0, error: error.message || 'WALLPAPER_ENGINE_SCAN_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-wallpaper-engine-project-details', async (event, id) => {
+  if (!isTrustedMainWindowEvent(event)) return { ok: false, error: 'WALLPAPER_ENGINE_UNTRUSTED_CALLER' };
+  try {
+    return await wallpaperEngineLibrary.getProjectDetails(String(id || ''));
+  } catch (error) {
+    return { ok: false, error: error.message || 'WALLPAPER_ENGINE_PROJECT_DETAILS_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-wallpaper-engine-open-project-details', async (event, payload = {}) => {
+  if (!isTrustedMainWindowEvent(event)) return { ok: false, error: 'WALLPAPER_ENGINE_UNTRUSTED_CALLER' };
+  try {
+    const id = String(payload && payload.id || '');
+    const action = String(payload && payload.action || 'folder');
+    const details = await wallpaperEngineLibrary.getProjectDetails(id);
+    if (action === 'workshop') {
+      if (!details.workshopId) return { ok: false, error: 'WALLPAPER_ENGINE_WORKSHOP_ID_MISSING' };
+      return await wallpaperEngineRuntime.revealWorkshop(details.workshopId);
+    }
+    const location = await wallpaperEngineLibrary.getProjectLocation(id);
+    const error = await shell.openPath(location);
+    return error ? { ok: false, error } : { ok: true };
+  } catch (error) {
+    return { ok: false, error: error.code || error.message || 'WALLPAPER_ENGINE_OPEN_DETAILS_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-wallpaper-engine-runtime-status', async (event, payload = {}) => {
+  if (!isTrustedMainWindowEvent(event)) return { ok: false, error: 'WALLPAPER_ENGINE_UNTRUSTED_CALLER' };
+  try {
+    const probe = await wallpaperEngineRuntime.probe(payload && payload.force === true);
+    return { ...probe, runtime: wallpaperEngineRuntime.getStatus() };
+  } catch (error) {
+    return { ok: false, available: false, error: error.code || error.message || 'WALLPAPER_ENGINE_PROBE_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-wallpaper-engine-start', async (event, payload = {}) => {
+  if (!isTrustedMainWindowEvent(event)) return { ok: false, error: 'WALLPAPER_ENGINE_UNTRUSTED_CALLER' };
+  try {
+    const bounds = mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : { x: 0, y: 0, width: 1280, height: 720 };
+    return await wallpaperEngineRuntime.start(String(payload && payload.id || ''), {
+      x: bounds.x,
+      y: bounds.y,
+      width: bounds.width,
+      height: bounds.height,
+      fps: Math.max(30, Math.min(120, Number(payload && payload.fps) || 60)),
+    });
+  } catch (error) {
+    return { ok: false, error: error.code || error.message || 'WALLPAPER_ENGINE_START_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-wallpaper-engine-stop', async (event, payload = {}) => {
+  if (!isTrustedMainWindowEvent(event)) return { ok: false, error: 'WALLPAPER_ENGINE_UNTRUSTED_CALLER' };
+  try {
+    return await wallpaperEngineRuntime.stop(String(payload && payload.sessionId || ''));
+  } catch (error) {
+    return { ok: false, error: error.code || error.message || 'WALLPAPER_ENGINE_STOP_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-wallpaper-engine-capture-ready', async (event, payload = {}) => {
+  if (!isTrustedMainWindowEvent(event)) return { ok: false, error: 'WALLPAPER_ENGINE_UNTRUSTED_CALLER' };
+  try {
+    return await wallpaperEngineRuntime.prepareCaptureHost(
+      String(payload && payload.sessionId || ''),
+      {
+        hostWindowId: nativeWindowHandleString(mainWindow),
+        hostExecutable: process.execPath,
+      }
+    );
+  } catch (error) {
+    return { ok: false, error: error.code || error.message || 'WALLPAPER_ENGINE_CAPTURE_READY_FAILED' };
+  }
+});
+
+ipcMain.on('mineradio-wallpaper-engine-pointer', (event, payload = {}) => {
+  if (!isTrustedMainWindowEvent(event)) return;
+  wallpaperEngineRuntime.noteHostPointerActivity(
+    String(payload && payload.sessionId || ''),
+    payload || {}
+  );
+});
+
+ipcMain.handle('mineradio-wallpaper-engine-apply-properties', async (event, payload = {}) => {
+  if (!isTrustedMainWindowEvent(event)) return { ok: false, error: 'WALLPAPER_ENGINE_UNTRUSTED_CALLER' };
+  try {
+    return await wallpaperEngineRuntime.applyProperties(
+      String(payload && payload.sessionId || ''),
+      payload && payload.properties || {}
+    );
+  } catch (error) {
+    return { ok: false, error: error.code || error.message || 'WALLPAPER_ENGINE_PROPERTIES_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-wallpaper-engine-choose-directory', async (event) => {
+  if (!isTrustedMainWindowEvent(event)) return { ok: false, error: 'WALLPAPER_ENGINE_UNTRUSTED_CALLER' };
+  try {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '导入 Wallpaper Engine 项目目录',
+      properties: ['openDirectory'],
+    });
+    if (result.canceled || !result.filePaths || !result.filePaths[0]) {
+      return { ok: true, canceled: true };
+    }
+    return { ...(await wallpaperEngineLibrary.addManualRoot(result.filePaths[0])), canceled: false };
+  } catch (error) {
+    return { ok: false, canceled: false, projects: [], count: 0, error: error.message || 'WALLPAPER_ENGINE_IMPORT_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-wallpaper-engine-choose-project-file', async (event) => {
+  if (!isTrustedMainWindowEvent(event)) return { ok: false, error: 'WALLPAPER_ENGINE_UNTRUSTED_CALLER' };
+  try {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '导入 Wallpaper Engine project.json 或 Scene 包',
+      properties: ['openFile'],
+      filters: [
+        { name: 'Wallpaper Engine 项目 / Scene 包', extensions: ['json', 'pkg', 'pak'] },
+      ],
+    });
+    if (result.canceled || !result.filePaths || !result.filePaths[0]) {
+      return { ok: true, canceled: true };
+    }
+    return { ...(await wallpaperEngineLibrary.addManualProjectFile(result.filePaths[0])), canceled: false };
+  } catch (error) {
+    return { ok: false, canceled: false, projects: [], count: 0, error: error.message || 'WALLPAPER_ENGINE_IMPORT_PROJECT_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-wallpaper-engine-remove-directory', async (event, rootId) => {
+  if (!isTrustedMainWindowEvent(event)) return { ok: false, error: 'WALLPAPER_ENGINE_UNTRUSTED_CALLER' };
+  try {
+    return await wallpaperEngineLibrary.removeManualRoot(String(rootId || ''));
+  } catch (error) {
+    return { ok: false, projects: [], count: 0, error: error.message || 'WALLPAPER_ENGINE_REMOVE_ROOT_FAILED' };
+  }
+});
+
+function collectMineradioProcessIds() {
+  const ids = new Set([process.pid]);
+  try {
+    for (const metric of app.getAppMetrics()) {
+      const pid = Number(metric && metric.pid);
+      if (Number.isFinite(pid) && pid > 0) ids.add(Math.round(pid));
+    }
+  } catch (_) {}
+  return Array.from(ids);
+}
+
+ipcMain.handle('mineradio-memory-snapshot', async () => {
+  return { ok: true, snapshot: appMemory.getMemorySnapshot() };
+});
+
+ipcMain.handle('mineradio-memory-trim-app', async (_event, payload = {}) => {
+  const before = appMemory.getMemorySnapshot();
+  const trim = await appMemory.trimAppWorkingSets(collectMineradioProcessIds());
+  const after = appMemory.getMemorySnapshot();
+  return {
+    ok: trim && trim.ok !== false,
+    reason: String(payload.reason || 'renderer'),
+    before,
+    trim,
+    after,
+  };
 });
 
 async function createWindow() {
@@ -1336,10 +1508,22 @@ async function createWindow() {
 
   process.env.HOST = '127.0.0.1';
   process.env.PORT = String(port);
+  process.env.MINERADIO_SPOTIFY_ONLY = '1';
   const userDataPath = app.getPath('userData');
+  const migrationResult = runV2UserDataMigration({
+    userDataPath,
+    appRoot: path.join(__dirname, '..'),
+    targetVersion: V2_PREVIEW_MIGRATION_VERSION,
+  });
+  if (!migrationResult.ok) {
+    console.warn('[Migration] Spotify-only v2 migration was not applied:', migrationResult.error);
+  } else if (migrationResult.changed) {
+    console.log('[Migration] Spotify-only v2 migration completed; backup:', migrationResult.backupPath);
+  }
   process.env.COOKIE_FILE = path.join(userDataPath, '.cookie');
   process.env.QQ_COOKIE_FILE = path.join(userDataPath, '.qq-cookie');
   process.env.MINERADIO_LYRIC_CACHE_DIR = path.join(userDataPath, 'lyric-cache');
+  process.env.MINERADIO_ROMANIZATION_OVERRIDES = path.join(userDataPath, 'romanization-overrides.json');
   process.env.MINERADIO_UPDATE_DIR = getUpdateDownloadDir();
   const spotifyAuthStore = new SpotifySecureAuthStore({
     filePath: path.join(userDataPath, '.spotify-auth.enc'),
@@ -1351,17 +1535,11 @@ async function createWindow() {
   });
   spotifyAuthStore.clearLegacyPlaintext();
   global.__mineradioSpotifyAuthStore = spotifyAuthStore;
-  try {
-    const legacyQQCookie = path.join(__dirname, '..', '.qq-cookie');
-    if (fs.existsSync(legacyQQCookie)) {
-      if (!fs.existsSync(process.env.QQ_COOKIE_FILE)) {
-        fs.copyFileSync(legacyQQCookie, process.env.QQ_COOKIE_FILE);
-      }
-      fs.unlinkSync(legacyQQCookie);
-    }
-  } catch (e) {
-    console.warn('QQ cookie migration skipped:', e.message);
-  }
+  const appleMusicAuthStore = new AppleMusicSecureAuthStore({
+    filePath: path.join(userDataPath, '.apple-music-lyrics-auth.enc'),
+    safeStorage,
+  });
+  global.__mineradioAppleMusicAuthStore = appleMusicAuthStore;
 
   localServer = require(path.join(__dirname, '..', 'server.js'));
   await waitForServer(localServer);
@@ -1386,7 +1564,7 @@ async function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      backgroundThrottling: false,
+      backgroundThrottling: process.env.MINERADIO_KEEP_BACKGROUND_RENDERING !== '1',
     },
   });
 
@@ -1459,6 +1637,11 @@ if (!gotSingleInstanceLock) {
   });
 
   app.whenReady().then(async () => {
+    try {
+      await wallpaperEngineLibrary.installProtocol(protocol);
+    } catch (error) {
+      console.warn('[Wallpaper Engine] local preview protocol unavailable:', error && error.message || error);
+    }
     screen.on('display-metrics-changed', () => {
       positionDesktopLyricsWindow();
       positionWallpaperWindow();
@@ -1466,6 +1649,7 @@ if (!gotSingleInstanceLock) {
     });
     screen.on('display-added', () => scheduleWindowStateSend(mainWindow));
     screen.on('display-removed', () => scheduleWindowStateSend(mainWindow));
+    await clearLegacyProviderSessions();
     await createWindow();
   });
 
@@ -1479,6 +1663,9 @@ if (!gotSingleInstanceLock) {
   });
 
   app.on('before-quit', () => {
+    wallpaperEngineLibrary.dispose();
+    wallpaperEngineRuntime.dispose().catch(() => {});
+    desktopWallpaperRuntime.dispose().catch(() => {});
     unregisterMineradioGlobalHotkeys();
     closeOverlayWindows();
     if (localServer && localServer.close) localServer.close();

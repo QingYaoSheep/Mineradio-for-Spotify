@@ -3,10 +3,11 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const { readRendererSource } = require('./renderer-source');
 
 const root = path.resolve(__dirname, '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
-const frontend = read('public/index.html');
+const frontend = readRendererSource();
 const server = read('server.js');
 const main = read('desktop/main.js');
 const authSession = read('spotify-auth-session.js');

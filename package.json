@@ -1,30 +1,57 @@
 {
-  "name": "mineradio-for-spotify",
-  "productName": "Mineradio for Spotify",
-  "version": "1.1.2",
-  "description": "面向 Spotify 的沉浸式桌面音乐可视化播放器，融合逐字歌词、粒子舞台和 3D 歌单架。",
-  "author": "XxHuberrr",
+  "name": "better-radio",
+  "productName": "Better Radio",
+  "version": "2.0.0",
+  "description": "为 Spotify 专门打造的舞台粒子效果视觉歌词显示器，融合逐字歌词、Apple Music 风格歌词与沉浸式粒子舞台。",
+  "author": "QingYaoSheep",
   "license": "GPL-3.0-only",
-  "homepage": "https://github.com/XxHuberrr/Mineradio#readme",
+  "homepage": "https://github.com/QingYaoSheep/Mineradio-for-Spotify#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/XxHuberrr/Mineradio.git"
+    "url": "git+https://github.com/QingYaoSheep/Mineradio-for-Spotify.git"
   },
   "bugs": {
-    "url": "https://github.com/XxHuberrr/Mineradio/issues"
+    "url": "https://github.com/QingYaoSheep/Mineradio-for-Spotify/issues"
   },
   "main": "desktop/main.js",
   "private": true,
   "scripts": {
+    "build:amll": "node scripts/build-amll-vendor.js",
+    "prestart": "npm run build:amll",
     "start": "electron .",
+    "prebuild:win": "npm run build:amll",
     "build:win": "electron-builder --win nsis",
+    "prebuild:win:dir": "npm run build:amll",
     "build:win:dir": "electron-builder --win dir",
+    "sync:amll-runtime": "node scripts/sync-amll-runtime.js",
+    "verify:amll-beta": "node scripts/verify-apple-music-lyrics-beta.js",
+    "verify:amll-opacity-runtime": "node scripts/runtime-amll-beta-browser-opacity.js",
+    "verify:amll-runtime": "electron scripts/runtime-amll-beta-smoke.js",
+    "verify:apple-lyrics": "node scripts/verify-apple-music-lyrics-source.js",
     "verify:spotify": "node scripts/verify-spotify-pkce-security.js && node scripts/verify-spotify-pkce-flow.js && node scripts/verify-spotify-pkce-http.js && node scripts/verify-spotify-mode-routing.js && node scripts/verify-spotify-playlist-loader.js",
+    "verify:migration": "node scripts/verify-v2-user-data-migration.js",
+    "verify:spotify-only": "node scripts/verify-spotify-only-route-policy.js",
+    "verify:spotify-web-api": "node scripts/verify-spotify-web-api-policy.js",
+    "verify:spotify-search": "node scripts/verify-spotify-search.js",
+    "verify:spotify-library": "node scripts/verify-spotify-library-actions.js",
+    "verify:spotify-devices": "node scripts/verify-spotify-devices.js",
+    "verify:spotify-idle": "node scripts/verify-spotify-idle-state.js",
+    "verify:spotify-ui": "node scripts/verify-spotify-only-ui.js",
+    "verify:spotify-home": "node scripts/verify-spotify-home.js",
+    "verify:memory": "node scripts/verify-memory-cleanup.js",
+    "verify:sonic": "node scripts/verify-sonic-topography.js",
+    "verify:queue-virtual": "node scripts/verify-queue-virtualization.js",
+    "verify:background": "node scripts/verify-background-performance.js",
+    "verify:splash": "node scripts/verify-splash-wordmark.js",
+    "verify:wallpaper-library": "node scripts/verify-wallpaper-engine-library.js",
+    "verify:wallpaper-v2": "node scripts/verify-wallpaper-engine-v2-integration.js",
+    "verify:wallpaper-preview": "node scripts/verify-wallpaper-preview-layout.js",
+    "verify:wallpaper": "node scripts/verify-wallpaper-mode.js && npm run verify:wallpaper-library && npm run verify:wallpaper-v2 && npm run verify:wallpaper-preview",
     "verify:release": "node scripts/verify-github-release-readiness.js && npm run verify:spotify"
   },
   "build": {
-    "appId": "com.mineradio.desktop",
-    "productName": "Mineradio for Spotify",
+    "appId": "com.betterradio.desktop",
+    "productName": "Better Radio",
     "directories": {
       "output": "dist",
       "buildResources": "build"
@@ -41,15 +68,23 @@
       "dj-analyzer.js",
       "qq-lyric-codec.js",
       "lyric-cache.js",
+      "romanization-engine.js",
+      "spotify-only-route-policy.js",
+      "spotify-web-api-policy.js",
+      "user-data-migration.js",
+      "THIRD_PARTY_NOTICES.md",
       "spotify-auth-session.js",
       "spotify-secure-auth-store.js",
+      "apple-music-secure-auth-store.js",
+      "apple-music-lyrics-provider.js",
+      "apple-music-ttml.js",
       "package.json",
       "!public/index.*.html",
       "public/index.html"
     ],
     "asar": false,
     "win": {
-      "executableName": "Mineradio",
+      "executableName": "Better Radio",
       "icon": "build/icon.ico",
       "signAndEditExecutable": false,
       "target": [
@@ -67,29 +102,29 @@
       "allowToChangeInstallationDirectory": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Mineradio for Spotify",
+      "shortcutName": "Better Radio",
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
       "installerSidebar": "build/installerSidebar.bmp",
       "uninstallerSidebar": "build/installerSidebar.bmp",
       "installerHeader": "build/installerHeader.bmp",
       "include": "build/installer.nsh",
-      "artifactName": "Mineradio-for-Spotify-${version}-Setup.${ext}"
+      "artifactName": "Better-Radio-${version}-Setup.${ext}"
     },
     "publish": [
       {
         "provider": "github",
-        "owner": "XxHuberrr",
-        "repo": "Mineradio"
+        "owner": "QingYaoSheep",
+        "repo": "Mineradio-for-Spotify"
       }
     ]
   },
   "mineradio": {
     "update": {
       "provider": "github",
-      "owner": "XxHuberrr",
-      "repo": "Mineradio",
-      "preview": true,
+      "owner": "QingYaoSheep",
+      "repo": "Mineradio-for-Spotify",
+      "preview": false,
       "preferMirrors": true,
       "mirrors": [
         "https://gh.llkk.cc/",
@@ -99,13 +134,18 @@
     }
   },
   "dependencies": {
+    "@applemusic-like-lyrics/core": "0.5.2",
     "gsap": "^3.15.0",
+    "kuromoji": "^0.1.2",
     "mpg123-decoder": "^1.0.3",
-    "NeteaseCloudMusicApi": "^4.32.0"
+    "NeteaseCloudMusicApi": "^4.32.0",
+    "sax": "^1.6.0",
+    "wanakana": "^5.3.1"
   },
   "devDependencies": {
     "electron": "^42.4.1",
     "electron-builder": "^26.15.3",
+    "esbuild": "0.25.12",
     "rcedit": "^5.0.2"
   }
 }

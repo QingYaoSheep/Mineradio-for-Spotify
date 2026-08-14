@@ -1,5 +1,19 @@
 # Changelog
 
+## v2.0.0
+
+- 项目正式更名为 **Better Radio**，定位为为 Spotify 专门打造的舞台粒子效果视觉歌词显示器；启动界面、窗口、桌面歌词、壁纸、安装器、快捷方式、EXE 元数据与更新资产全部采用新名称。
+- Better Radio 使用独立的 `com.betterradio.desktop`、`Better Radio.exe`、安装目录、登录分区和 `%APPDATA%\Better Radio`，不覆盖、迁移、读取或卸载旧 Mineradio。
+- 产品界面和播放链路收口为 Spotify-only；Spotify 首页、搜索、资料库、歌单、设备切换和空闲态使用严格白名单 API，授权采用无 Client Secret 的 PKCE 与 `safeStorage` 加密刷新令牌。
+- 新增 Apple Music 歌词 Beta 多行舞台和独立设置页，支持未来歌词模糊、拖动浏览、Apple Music 式弹簧换行、动态辉光、逐字上浮和原生呼吸点。
+- 新增可选 Apple Music TTML 歌词源，保留原文、翻译、逐字时间、背景人声、对唱与重叠时间轴，并将采用的原始 TTML 安全缓存到本地；翻译优先模式可整源回退 QQ。
+- QQ QRC 仍为默认最高优先级逐字歌词源，网易云仅作逐行兜底；完善自动匹配、歌词搜索选择、单曲/全局延迟、每曲单缓存与缓存失败重试。
+- 重写 AMLL 时间轴展示：最多三句前景重叠高亮，背景人声使用独立绝对时钟。
+- 加入本地日语/韩语音译与缓存；修复韩语源空格词列、Apple TTML 词内多节点、音节间距、音译对齐、遮罩宽度和音译误上浮。
+- 新增 Sonic Topography 音域回响、第二套音域预设、歌词清晰度设置、Wallpaper Engine 本地资源库与安全 Windows 壁纸模式。
+- 加入队列/搜索虚拟化、默认后台节流、AMLL 完整销毁、播放器缓存与自身进程内存清理，修复关闭 Beta 后粒子舞台、普通歌词与拖动交互卡死。
+- 加强 Spotify 与 Apple Music 凭据安全：敏感 Token 不进入前端存储、日志、URL、歌词缓存或仓库；更新和本地写接口继续限制回环同源访问。
+
 ## v1.1.2
 
 - 项目正式命名为 **Mineradio for Spotify**；窗口、安装器、快捷方式、安装包文件名与公开文档统一使用新名称，同时保留旧应用 ID、用户数据目录和安装目录以兼容现有用户。

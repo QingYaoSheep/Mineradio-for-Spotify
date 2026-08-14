@@ -247,7 +247,7 @@ function buildQQMusicLyricRequestParam(songMID, songID) {
     lrc_t: 0,
     qrc: 1,
     qrc_t: 0,
-    roma: 1,
+    roma: 0,
     roma_t: 0,
     trans: 1,
     trans_t: 0,

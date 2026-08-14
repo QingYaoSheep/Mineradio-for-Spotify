@@ -9,15 +9,13 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   getState: () => ipcRenderer.invoke('desktop-window-get-state'),
   close: () => ipcRenderer.invoke('desktop-window-close'),
   getDesktopSources: (opts) => ipcRenderer.invoke('desktop-capturer-get-sources', opts),
-  openNeteaseMusicLogin: () => ipcRenderer.invoke('netease-music-open-login'),
-  clearNeteaseMusicLogin: () => ipcRenderer.invoke('netease-music-clear-login'),
-  openQQMusicLogin: () => ipcRenderer.invoke('qq-music-open-login'),
-  clearQQMusicLogin: () => ipcRenderer.invoke('qq-music-clear-login'),
   openUpdateInstaller: (filePath) => ipcRenderer.invoke('mineradio-open-update-installer', filePath),
+  openSpotifyApp: () => ipcRenderer.invoke('mineradio-open-spotify-app'),
   restartApp: () => ipcRenderer.invoke('mineradio-restart-app'),
   configureGlobalHotkeys: (bindings) => ipcRenderer.invoke('mineradio-hotkeys-configure-global', bindings || []),
   exportJsonFile: (payload) => ipcRenderer.invoke('mineradio-export-json-file', payload || {}),
   importJsonFile: () => ipcRenderer.invoke('mineradio-import-json-file'),
+  saveMigrationSettingsSnapshot: (values) => ipcRenderer.invoke('mineradio-migration-save-settings-snapshot', values || {}),
   onGlobalHotkey: (callback) => {
     if (typeof callback !== 'function') return () => {};
     const listener = (_event, payload) => callback(payload || {});
@@ -40,6 +38,20 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   },
   setWallpaperMode: (enabled, payload) => ipcRenderer.invoke('mineradio-wallpaper-set-enabled', !!enabled, payload || {}),
   updateWallpaperMode: (payload) => ipcRenderer.invoke('mineradio-wallpaper-update', payload || {}),
+  listWallpaperEngineProjects: (payload) => ipcRenderer.invoke('mineradio-wallpaper-engine-list', payload || {}),
+  getWallpaperEngineProjectDetails: (id) => ipcRenderer.invoke('mineradio-wallpaper-engine-project-details', String(id || '')),
+  openWallpaperEngineProjectDetails: (payload) => ipcRenderer.invoke('mineradio-wallpaper-engine-open-project-details', payload || {}),
+  getWallpaperEngineRuntimeStatus: (payload) => ipcRenderer.invoke('mineradio-wallpaper-engine-runtime-status', payload || {}),
+  startWallpaperEngineScene: (payload) => ipcRenderer.invoke('mineradio-wallpaper-engine-start', payload || {}),
+  stopWallpaperEngineScene: (payload) => ipcRenderer.invoke('mineradio-wallpaper-engine-stop', payload || {}),
+  reportWallpaperEngineCaptureReady: (payload) => ipcRenderer.invoke('mineradio-wallpaper-engine-capture-ready', payload || {}),
+  reportWallpaperEnginePointerActivity: (payload) => ipcRenderer.send('mineradio-wallpaper-engine-pointer', payload || {}),
+  applyWallpaperEngineProperties: (payload) => ipcRenderer.invoke('mineradio-wallpaper-engine-apply-properties', payload || {}),
+  chooseWallpaperEngineDirectory: () => ipcRenderer.invoke('mineradio-wallpaper-engine-choose-directory'),
+  chooseWallpaperEngineProjectFile: () => ipcRenderer.invoke('mineradio-wallpaper-engine-choose-project-file'),
+  removeWallpaperEngineDirectory: (rootId) => ipcRenderer.invoke('mineradio-wallpaper-engine-remove-directory', String(rootId || '')),
+  getMemorySnapshot: () => ipcRenderer.invoke('mineradio-memory-snapshot'),
+  trimAppMemory: (payload) => ipcRenderer.invoke('mineradio-memory-trim-app', payload || {}),
   onStateChange: (callback) => {
     const listener = (_event, state) => callback(state);
     ipcRenderer.on('desktop-window-state', listener);
