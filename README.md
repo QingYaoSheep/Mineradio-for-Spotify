@@ -1,6 +1,7 @@
 # Better Radio
 
-![Better Radio 暗场舞台](./docs/assets/readme/cinema-beat-smoke.png)
+![Better Radio 歌词预览](./docs/assets/readme/preview1.png)
+![Better Radio 歌词预览](./docs/assets/readme/preview2.png)
 
 **Better Radio 是为 Spotify 专门打造的舞台粒子效果视觉歌词显示器。**
 
